@@ -50,6 +50,7 @@
 | session 2：V0 baseline | `phase0-v0-baseline` / `../ca-v0` | **已交付并合入**，session 可关闭 | — |
 | session 4：Phase 3 | `phase3-policy-engine` / `../ca-phase3` | `policy/facts.py`、`policy/engine.py`、`decision/**`、对应 tests（纯函数，无 IO / LLM）；只读 `policy/schema.py` | `cs_agent_p3` |
 | session 3：Phase 1 | `phase1-skeleton` / `../ca-phase1` | Phase 1 全部范围（用户已在该 session 内验收 2 个 milestone：0002 迁移 + AuthContext + Repository；FastAPI / JWT / 可观测性，新依赖 fastapi / uvicorn / pyjwt / prometheus-client / httpx 已获用户同意）。共享文件改动：settings.py 加 jwt_*；test_migrations 合并时以 master 的一次性库版为准 | `cs_agent_p1` |
+| FE（前端） | `frontend-chat` / `../ca-frontend` | `frontend/**`、`.gitignore` 的 frontend 两行、本表这一行 | 无数据库（对 mock，后接真实 API） |
 
 合并顺序（用户 2026-09-05 拍板）：**等 V0 交付后**一并合——V0 → phase0-eval-foundation → main（tag `v0.1-phase0`）→ phase1-skeleton rebase 到 main。
 `uv.lock` 不手工合，合并后重跑 `uv sync`。
