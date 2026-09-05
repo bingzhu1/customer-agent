@@ -85,6 +85,17 @@ describe('timelineReducer 关键分支', () => {
     expect(latestPendingAction(after)).toBeNull()
   })
 
+  it('写路径未开：pending_action 仍在（金额与策略是真值），但没有 action_id', () => {
+    const state = oneTurn(FIXTURES.refund_pending_only())
+    const action = latestPendingAction(state)
+    expect(action).not.toBeNull()
+    expect(action?.action_id).toBeNull()
+    expect(action?.confirm_url).toBeNull()
+    // 判定该给的都给了，只差执行
+    expect(action?.summary.amount).toBe('89.00')
+    expect(action?.policy_id).toBe('REFUND-STD-001')
+  })
+
   it('reset 用于拉历史，整条时间线被替换', () => {
     const state = timelineReducer(oneTurn(FIXTURES.answer()), {
       type: 'reset',

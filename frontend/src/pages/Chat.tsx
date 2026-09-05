@@ -104,6 +104,8 @@ export default function Chat({ client, identity, onLogout }: Props) {
 
   const confirm = useCallback(
     async (action: PendingAction, accept: boolean) => {
+      // action_id 为 null 说明写路径未开，按钮本来就该是灰的；这里再兜一次
+      if (action.action_id === null) return
       const controller = new AbortController()
       abortRef.current = controller
       const replyId = nextId()

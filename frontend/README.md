@@ -25,10 +25,12 @@ npm run dev              # http://localhost:5173
 真实后端下，接口交付情况由 `.env` 里三个开关控制，**后端就绪后改开关即可，前端不用改代码**：
 
 ```
-VITE_HAS_DEV_TOKEN=0   # POST /v1/dev/token 就绪后改 1
-VITE_HAS_CONFIRM=0     # POST /v1/actions/{id}/confirm 就绪后改 1
-VITE_HAS_GET_THREAD=0  # GET  /v1/threads/{id} 就绪后改 1
+VITE_HAS_DEV_TOKEN=1   # 已交付（main a81d059）
+VITE_HAS_CONFIRM=0     # Phase 4 写路径，尚未交付
+VITE_HAS_GET_THREAD=1  # 已交付（main a81d059）
 ```
+
+后端要以 `APP_ENV=dev` 启动，`/v1/dev/token` 才注册；CORS 默认放行 `http://localhost:5173`。
 
 未就绪的按钮置灰并在界面上注明原因，而不是点下去报错。
 `/v1/dev/token` 未就绪时，用仓库根的 `make token USER=101` 签一个粘进登录页即可。
@@ -45,7 +47,22 @@ VITE_HAS_GET_THREAD=0  # GET  /v1/threads/{id} 就绪后改 1
 | 这个不确定吧 | `ANSWER` + `confidence=low` — 低置信标记 |
 | 其他 | `ANSWER` — 正常回答带引用 |
 
+输入含「写路径」或「未开」的话，可以看到**当前真实后端**的形状：待确认卡片照常渲染
+（金额与策略引用是真值），但 `action_id` / `confirm_url` / `expires_at` 为 null，确认按钮置灰。
+
 历史输入框填 `th_gone` 可以看到 §8.4 的 404 展示（"会话不存在或不属于你"）。
+
+## 与后端契约对齐的几处（易踩）
+
+| 处 | 实际 |
+|---|---|
+| 发消息请求体 | `{"message": "..."}`，后端 schema `extra="forbid"`，多一个字段就 400 |
+| dev token 响应 | `{token, token_type, expires_in_minutes}` |
+| `confidence` | 后端是 `"low"` / `"normal"`（PRD 示例写的是 high，类型两者都容纳） |
+| `handoff_offer` | 是一句话**字符串**，不是对象 |
+| `pending_action.summary.amount` | **字符串**（Decimal 序列化），前端不做数值换算 |
+| `pending_action` 的 id 三件套 | Phase 4 前 `action_id` / `confirm_url` / `expires_at` 恒为 null |
+| 历史消息 | 只有 `role` / `content` / `created_at`，**不回放判定结果** |
 
 ## 结构
 

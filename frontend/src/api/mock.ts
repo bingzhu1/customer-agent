@@ -23,7 +23,7 @@ export function makeResponse(patch: Partial<MessageResponse> = {}): MessageRespo
     reply: '标准商品自签收之日起 30 天内、未使用可全额退款。',
     decision: 'ANSWER',
     reason_code: 'OK',
-    confidence: 'high',
+    confidence: 'normal',
     citations: [{ policy_id: 'REFUND-STD-001', policy_version: 3, anchor: 'refund#standard' }],
     tools_used: ['search_policy'],
     pending_action: null,
@@ -46,7 +46,7 @@ export const FIXTURES: Record<string, () => MessageResponse> = {
       reply: '根据现有政策文档，这一情形我只能给出参考答复：一般按标准退换货处理。如需确认，可转人工。',
       reason_code: 'RETRIEVAL_LOW_CONFIDENCE',
       confidence: 'low',
-      handoff_offer: { message: '需要人工核对政策？点此转人工。' },
+      handoff_offer: '需要人工核对政策？可以转人工核对。',
     }),
 
   /** REQUEST_INFO：缺必需实体（矩阵规则 15） */
@@ -69,10 +69,13 @@ export const FIXTURES: Record<string, () => MessageResponse> = {
       reason_code: 'POLICY_SATISFIED',
       citations: [{ policy_id: 'REFUND-STD-001', policy_version: 3, anchor: 'refund#standard' }],
       tools_used: ['get_order', 'search_policy'],
+      // mock 演示的是 Phase 4 写路径打通后的样子：有 action_id 才能点确认。
+      // 真实后端现在返回的 action_id / confirm_url / expires_at 都是 null，
+      // 见下面的 refund_pending_only。
       pending_action: {
         action_id: 'act_mock01',
         type: 'refund',
-        summary: { order_id: 82913, amount: 89.0, currency: 'CNY' },
+        summary: { order_id: 82913, amount: '89.00', currency: 'CNY' },
         policy_id: 'REFUND-STD-001',
         policy_version: 3,
         confirm_url: '/v1/actions/act_mock01/confirm',
@@ -90,7 +93,7 @@ export const FIXTURES: Record<string, () => MessageResponse> = {
       reason_code: 'AMOUNT_ABOVE_AUTO_LIMIT',
       citations: [{ policy_id: 'REFUND-STD-001', policy_version: 3, anchor: 'refund#standard' }],
       tools_used: ['get_order', 'search_policy'],
-      handoff_offer: { review_id: 'rev_mock01', message: '已提交主管审批，预计 2 小时内答复。' },
+      handoff_offer: '已提交主管审批，预计 2 小时内答复。',
       latency_ms: 2980,
     }),
 
@@ -113,9 +116,22 @@ export const FIXTURES: Record<string, () => MessageResponse> = {
       decision: 'DEGRADE',
       reason_code: 'DEPENDENCY_UNAVAILABLE',
       tools_used: ['search_policy', 'get_shipping'],
-      handoff_offer: { message: '需要立刻确认物流？可转人工。' },
+      handoff_offer: '需要立刻确认物流？可以转人工。',
       latency_ms: 5120,
     }),
+  /** 当前后端的真实形状：卡片有真金额与真策略引用，但 action_id / 有效期为 null */
+  refund_pending_only: () => {
+    const base = FIXTURES.refund()
+    return {
+      ...base,
+      pending_action: {
+        ...base.pending_action!,
+        action_id: null,
+        confirm_url: null,
+        expires_at: null,
+      },
+    }
+  },
 }
 
 /** §8.4 的 404 信封：不存在与不属于你，对外同一个响应。 */
@@ -130,6 +146,7 @@ export const NOT_FOUND_ERROR = new ApiError({
 /** 关键词 → 样本。演示时照着输入即可走到对应分支。 */
 function pick(text: string): () => MessageResponse {
   const t = text.toLowerCase()
+  if (t.includes('写路径') || t.includes('未开')) return FIXTURES.refund_pending_only
   if (t.includes('退款') || t.includes('refund')) return FIXTURES.refund
   if (t.includes('620') || t.includes('人工') || t.includes('主管')) return FIXTURES.human
   if (t.includes('别人') || t.includes('他的') || t.includes('99999')) return FIXTURES.deny
@@ -169,7 +186,7 @@ export function createMockClient(): ApiClient {
       await sleep(120)
       threadId = nextId('th')
       history.length = 0
-      return { thread_id: threadId }
+      return { thread_id: threadId, status: 'active', created_at: new Date().toISOString() }
     },
 
     async sendMessage(id, text, signal) {
@@ -177,15 +194,23 @@ export function createMockClient(): ApiClient {
       // 演示 404：会话 id 里带 gone 就当作不存在或不属于你
       if (id.includes('gone')) throw NOT_FOUND_ERROR
       const result = { ...pick(text)(), thread_id: id }
-      history.push({ role: 'user', content: text })
-      history.push({ role: 'assistant', content: result.reply, result })
+      history.push({ role: 'user', content: text, created_at: new Date().toISOString() })
+      history.push({ role: 'assistant', content: result.reply, created_at: new Date().toISOString() })
       return result
     },
 
     async getThread(id, signal) {
       await sleep(200, signal)
       if (id.includes('gone')) throw NOT_FOUND_ERROR
-      return { thread_id: id, messages: [...history], case_facts_summary: null }
+      return {
+        thread_id: id,
+        status: 'active',
+        created_at: new Date().toISOString(),
+        last_active_at: new Date().toISOString(),
+        messages: [...history],
+        case_facts: {},
+        narrative_summary: null,
+      }
     },
 
     async confirmAction(actionId, confirm, signal) {
@@ -203,7 +228,7 @@ export function createMockClient(): ApiClient {
             citations: [],
             tools_used: [],
           })
-      history.push({ role: 'assistant', content: result.reply, result })
+      history.push({ role: 'assistant', content: result.reply, created_at: new Date().toISOString() })
       return result
     },
   }
