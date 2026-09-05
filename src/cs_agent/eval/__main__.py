@@ -83,6 +83,8 @@ def main(argv: list[str] | None = None) -> int:
             "filter": args.filter,
             "no_db": args.no_db,
             "model_primary": settings.llm_model_primary,
+            "embedding_provider": getattr(settings, "embedding_provider", "unknown"),
+            "rag_tau": f"{settings.rag_tau_low} / {settings.rag_tau_high}",
         },
     )
     metrics = compute_metrics(run.cases, settings.llm_model_primary)

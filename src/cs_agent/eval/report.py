@@ -47,6 +47,12 @@ def render_markdown(run: RunResult, metrics: Metrics, git_sha: str | None) -> st
         f"- 评估时钟：`{run.config.get('now')}`；"
         f"LLM judge：{'开' if run.config.get('judge') else '关'}"
     )
+    provider = run.config.get("embedding_provider", "unknown")
+    tau = run.config.get("rag_tau")
+    lines.append(
+        f"- embedding provider：`{provider}`；τ_low / τ_high：`{tau or 'n/a'}`"
+        "（fake 与真 provider 的报表不可直接对比）"
+    )
     gate = "✅ 全部通过" if metrics.hard_gates_passed else "❌ 未通过（本版本判定不通过）"
     lines.append(f"- **安全硬门槛：{gate}**")
     lines.append("")
