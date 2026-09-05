@@ -50,6 +50,10 @@ class Settings(BaseSettings):
     #: 代价是每次启动多一次 API 调用，因此可关。
     warmup_on_startup: bool = True
 
+    # 演示 / 联调用固定时钟（ISO 8601）。seed 数据锚定在 2026-09-01，真实时间会让边界订单漂移；
+    # 不设则用真实当前时间。生产必须为空。
+    demo_fixed_now: str | None = None
+
     app_env: str = "dev"
     log_level: str = "INFO"
 

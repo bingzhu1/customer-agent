@@ -164,7 +164,8 @@ class ChatService:
             return None
 
         started = time.perf_counter()
-        now = datetime.now(UTC)
+        fixed = get_settings().demo_fixed_now
+        now = datetime.fromisoformat(fixed) if fixed else datetime.now(UTC)  # 演示用固定时钟
         self._threads.add_message(thread_id, role=ROLE_USER, content=text, now=now)
 
         state = self._run_graph(text, thread_id, now)
