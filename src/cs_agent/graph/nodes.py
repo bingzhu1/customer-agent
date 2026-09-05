@@ -22,7 +22,7 @@ import re
 from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
-from typing import Any
+from typing import Any, Protocol
 from uuid import UUID
 
 from cs_agent.auth.context import AuthContext
@@ -37,8 +37,9 @@ from cs_agent.graph.state import AgentState
 from cs_agent.graph.tools import ToolBelt
 from cs_agent.graph.untrusted import detect_injection
 from cs_agent.memory.case_facts import CaseFacts, apply_tool_result, apply_verdict
-from cs_agent.memory.extract import TranscriptTurn, extract_memories
+from cs_agent.memory.extract import TranscriptTurn
 from cs_agent.memory.inject import render_hints
+from cs_agent.memory.jobs import ExtractionJob
 from cs_agent.memory.user_memory import MemoryRecord, UserMemoryRepo
 from cs_agent.observability.logging import get_logger
 from cs_agent.policy.engine import PolicyVerdict, evaluate
@@ -50,6 +51,12 @@ from cs_agent.rag.rewrite import fallback_query
 ELIGIBILITY_INTENTS = frozenset({"refund_request"})
 
 logger = get_logger(__name__)
+
+
+class ExtractionSink(Protocol):
+    """抽取队列的形状。`ExtractionQueue` 与 `InlineExtractionQueue` 都满足它。"""
+
+    def submit(self, job: ExtractionJob) -> None: ...
 
 
 @dataclass
@@ -68,10 +75,10 @@ class Deps:
     case_store: CaseFactsStore = field(default_factory=InMemoryCaseFactsStore)
     #: 长期记忆仓库。为 None 时整条记忆链路关闭（V1 / V3 就是这样）。
     memory: UserMemoryRepo | None = None
-    #: 是否在每轮结束后抽取长期记忆。要多一次 Haiku 调用，默认关。
-    enable_memory_write: bool = False
-    #: 抽取用的模型客户端，测试可注入替身。
-    extract_client: Any | None = None
+    #: 抽取队列（`memory.jobs`）。为 None 时不写长期记忆。
+    #: 生产用异步的 `ExtractionQueue`；eval 与单测用 `InlineExtractionQueue`
+    #: 换取"本轮结束时记忆已写好"的确定性。
+    extraction_queue: ExtractionSink | None = None
     #: 记忆的来源会话（FR-705 要求记来源）。eval 的会话没有 threads 行，留空。
     thread_uuid: UUID | None = None
 
@@ -438,28 +445,27 @@ def persist(state: AgentState, deps: Deps) -> AgentState:
 
 
 def _write_memories(state: AgentState, deps: Deps) -> None:
-    """同步抽取并写入长期记忆。任何异常都吞掉——记忆不该拖垮一轮对话。"""
-    if not deps.enable_memory_write or deps.memory is None or deps.auth is None:
+    """把本轮对话投递给抽取队列，**立即返回**（不变式 4：长期记忆写入是异步的）。
+
+    抽取要调一次模型、还要写库，放在热路径上等于让每轮对话多等一秒多。
+    队列自己吞掉所有异常并计数（FR-704），所以这里也不需要 try——
+    但还是留着：构造 `TranscriptTurn` 本身理论上也可能抛。
+    """
+    if deps.extraction_queue is None or deps.auth is None:
         return
-    reply = state.get("reply") or ""
     user_text = state.get("user_text") or ""
     if not user_text:
         return
     try:
-        candidates = extract_memories(
-            [
-                TranscriptTurn(role="user", text=user_text),
-                TranscriptTurn(role="assistant", text=reply),
-            ],
-            client=deps.extract_client,
-        )
-        for c in candidates:
-            deps.memory.upsert(
-                deps.auth.user_id,
-                c.mem_key,
-                c.mem_value,
-                confidence=c.confidence,
+        deps.extraction_queue.submit(
+            ExtractionJob(
+                user_id=deps.auth.user_id,
+                transcript=(
+                    TranscriptTurn(role="user", text=user_text),
+                    TranscriptTurn(role="assistant", text=state.get("reply") or ""),
+                ),
                 source_thread_id=deps.thread_uuid,
             )
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("memory_write_failed", error=exc.__class__.__name__)
+        )
+    except Exception as exc:  # noqa: BLE001  投递失败也不该影响本轮回复
+        logger.warning("memory_submit_failed", error=exc.__class__.__name__)

@@ -1,4 +1,3 @@
-# PROGRESS — 行动时间线
 
 > 追加式记录，永不删除历史。每次有实质行动追加一行。
 > 当前状态快照见 [`HANDOFF.md`](HANDOFF.md)。
@@ -42,3 +41,4 @@
 | 2026-09-05 | Phase 4 M7 | 前端视觉改版方案 A：三栏布局（会话侧栏 / 对话流 / 本轮判定面板），新增 `timeline/workspace.ts` 多会话状态与 `useWorkspace` 副作用层，`components/{Sidebar,JudgmentPanel,Icon}`，重写 styles.css 与 AssistantFinalItem；api 层零改动 | 见 git log（frontend-chat） | tsc / lint / vitest 17 通过 / build 通过；mock 下六种 decision、确认流程、新会话与切换在浏览器人工走通 |
 | 2026-09-05 | Phase 1 | 第二轮 ⑤：记忆接线——act 用 apply_tool_result 填 CaseFacts、新增 persist 节点用 apply_verdict 记判定依据并落 agent.case_state；understand 后用 CaseFacts 确定性补指代实体；ingest 检索 user_memory 经 render_hints 带非权威声明注入 respond；persist 抽取并 upsert。另加 agents/v5_memory.py + registry v5；改用矩阵新规则 6b 取代节点里的事后钳位；修测试隔离（tests/conftest.py 用独立库 + fake provider + fake τ，不读 .env、不碰主库） | `caf6965` | test 607/607、lint 通过；投毒测试通过（写入可无限退款后判定逐字不变） |
 | 2026-09-05 | 冲刺 | 合入 Phase 1 ③（真 RAG 接线）与 ⑤（记忆接线 + v5 agent + conftest 测试隔离）、Phase 3 审批内核、Phase 2 压缩 / 异步抽取 / 演示脚本、前端改版；真 openai provider 下 V3：26/54，硬门槛全绿，policy 61%，一致性 12/12，escalation recall 73%（τ 0.48/0.50）；8000 重启为最新 main | `e7e06c1` | test 811/811 |
+| 2026-09-05 | Phase 1 | persist 节点接 P2 的 `memory.jobs.ExtractionQueue`：投递即返回，抽取与写库在后台线程（不变式 4 长期记忆异步写入、FR-704 不在热路径）；API 用异步队列并在 lifespan 回收，eval / 单测用 InlineExtractionQueue 换确定性 | `PENDING` | test 816/816、lint 通过；新增用例断言 persist 不等抽取（慢抽取器 1s，本轮 < 0.5s） |
