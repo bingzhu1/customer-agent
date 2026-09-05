@@ -20,3 +20,24 @@ CERTAINTY_WORDS: tuple[str, ...] = (
 def find_certainty_words(text: str) -> list[str]:
     """返回文本中出现的确定性措辞（按词表顺序，去重）。空列表表示通过。"""
     return [w for w in CERTAINTY_WORDS if w in text]
+
+
+#: 英文模板的确定性措辞。只给 `tests/test_templates.py` 反向校验英文骨架用；
+#: **不并入** `CERTAINTY_WORDS`——那份词表由 eval 拿去检查模型自由生成的回答，
+#: 把 must / always 加进去会误伤正常英文（"you must reply 确认"）。
+CERTAINTY_WORDS_EN: tuple[str, ...] = (
+    "definitely",
+    "guarantee",
+    "guaranteed",
+    "certainly",
+    "absolutely",
+    "100%",
+    "without doubt",
+    "no doubt",
+    "always",
+)
+
+
+def find_certainty_words_en(text: str) -> list[str]:
+    lowered = text.lower()
+    return [w for w in CERTAINTY_WORDS_EN if w in lowered]

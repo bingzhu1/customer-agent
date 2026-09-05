@@ -36,6 +36,7 @@ from cs_agent.domain.enums import (
     ReasonCode,
     RefundStatus,
 )
+from cs_agent.domain.language import LANGUAGE_NAMES, Lang, resolve_reply_language
 from cs_agent.eval.protocol import Citation, Usage
 from cs_agent.graph.llm import FallbackLlm, Llm, Understanding
 from cs_agent.graph.memory_store import CaseFactsStore, InMemoryCaseFactsStore
@@ -125,7 +126,15 @@ def ingest(state: AgentState, deps: Deps) -> AgentState:
         except Exception as exc:  # noqa: BLE001  记忆不可用不影响本轮
             logger.warning("memory_search_failed", error=exc.__class__.__name__)
 
-    return {"user_text": text, "case_facts": facts, "memory_hints": hints, "usage": Usage()}
+    # 回复语言在这里一次算定（确定性规则），respond 只管照用
+    lang = resolve_reply_language(text, hints)
+    return {
+        "user_text": text,
+        "case_facts": facts,
+        "memory_hints": hints,
+        "reply_language": lang,
+        "usage": Usage(),
+    }
 
 
 def understand(state: AgentState, deps: Deps) -> AgentState:
@@ -347,8 +356,9 @@ def respond(state: AgentState, deps: Deps) -> AgentState:
     """
     decision = state["decision"]
     verdict: PolicyVerdict | None = state.get("verdict")
+    lang = _lang_of(state)
     citations = _citations(state, verdict, deps)
-    skeleton = templates.render(decision, _template_vars(state, verdict, deps))
+    skeleton = templates.render(decision, _template_vars(state, verdict, deps), lang=lang)
 
     if decision.outcome is not DecisionOutcome.ANSWER:
         # 非 ANSWER 的分支**逐字**用模板，绝不让模型改写（FR-407）：
@@ -356,7 +366,7 @@ def respond(state: AgentState, deps: Deps) -> AgentState:
         return {"reply": skeleton, "citations": citations, "usage": state.get("usage", Usage())}
     if decision.reason_code is ReasonCode.IDEMPOTENT_REPLAY:
         # 模板说"下面是当时的结果"，结果本身从 biz.refunds 拼，确定性的，不让模型转述金额
-        detail = _replay_detail(state)
+        detail = _replay_detail(state, lang)
         return {
             "reply": f"{skeleton}{detail}",
             "citations": citations,
@@ -377,7 +387,13 @@ def respond(state: AgentState, deps: Deps) -> AgentState:
 # --- 辅助 ---------------------------------------------------------------------
 
 
-def _replay_detail(state: AgentState) -> str:
+def _lang_of(state: AgentState) -> Lang:
+    """ingest 没跑到（老 checkpoint）时回落中文。"""
+    lang = state.get("reply_language")
+    return "en" if lang == "en" else "zh"
+
+
+def _replay_detail(state: AgentState, lang: Lang = "zh") -> str:
     """已退款的事实明细。金额与时间都来自 `biz.refunds`，不经模型。"""
     succeeded = [
         r for r in (state.get("refunds") or []) if r.get("status") == RefundStatus.SUCCEEDED.value
@@ -387,6 +403,12 @@ def _replay_detail(state: AgentState) -> str:
     record = succeeded[-1]
     when = (record.get("executed_at") or record.get("created_at") or "")[:10]
     amount = record.get("amount")
+    if lang == "en":
+        return (
+            f" A refund of ¥{amount} was completed on {when}."
+            if when
+            else f" A refund of ¥{amount} has been completed."
+        )
     return f"退款 {amount} 元已于 {when} 处理完成。" if when else f"退款 {amount} 元已处理完成。"
 
 
@@ -458,6 +480,8 @@ def _render_prompt(state: AgentState, citations: list[Citation]) -> str:
         "系统已经做出的决定（不可更改）：",
         f"- decision: {decision.outcome.value}",
         f"- reason_code: {decision.reason_code.value}",
+        # 语言由确定性规则算定（本轮要求 → 记忆偏好 → 中文），模型只需照做
+        f"- 回复语言：{LANGUAGE_NAMES[_lang_of(state)]}",
     ]
     if not state.get("ownership_ok", True):
         lines.append("- 说明：查不到这条记录。只说没找到，不要提任何其他细节。")

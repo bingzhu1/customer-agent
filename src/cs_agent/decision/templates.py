@@ -17,6 +17,11 @@
 3. **引用与判定同源**：涉及政策的文案里的 `policy_id` / `policy_version` 由调用方从
    本轮 `PolicyVerdict` 取，不另行检索，保证 FR-306 的引用—执行一致（ADR-0006）。
 
+**语言**：每个 (终态, reason_code) 有中文与英文两套骨架，内容逐句对应，
+由 `lang` 参数选择。语言由调用方按 `cs_agent.domain.language` 的确定性规则给出
+（本轮要求 → 记忆偏好 → 中文）；模板本身仍不读记忆、不调 LLM。
+英文版**不渲染** `policy_summary`（策略正文只有中文），只保留 policy_id 与版本。
+
 模块不做 IO、不调 LLM、不读记忆。
 """
 
@@ -28,12 +33,19 @@ from decimal import Decimal
 
 from cs_agent.decision.matrix import Decision
 from cs_agent.domain.enums import DecisionOutcome, ReasonCode
+from cs_agent.domain.language import DEFAULT_LANG, Lang
 
 #: 转人工入口。低置信回答与多数升级文案都要带上（§9.4 规则 14 约束 2）。
 HANDOFF_OFFER = "如果需要，我可以为你转接人工客服。"
 
 #: 归属不符 / 查不到对象时的唯一文案。常量而非模板，杜绝任何随入参变化的可能。
 NOT_FOUND_TEXT = "抱歉，我没有查到这个订单。请核对订单号后再试。" + HANDOFF_OFFER
+
+HANDOFF_OFFER_EN = " If you'd like, I can transfer you to a human agent."
+NOT_FOUND_TEXT_EN = (
+    "Sorry, I couldn't find that order. Please check the order number and try again."
+    + HANDOFF_OFFER_EN
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -261,6 +273,214 @@ TEMPLATES: dict[tuple[DecisionOutcome, ReasonCode], Callable[[TemplateVars], str
     (DecisionOutcome.ANSWER, ReasonCode.POLICY_SATISFIED): _require_confirmation,
 }
 
+# --- English --------------------------------------------------------------------
+# 与中文骨架一一对应；约束相同：归属类逐字相同、不说满话、不编依据。
+
+
+def _order_phrase_en(vars_: TemplateVars) -> str:
+    return "this order" if vars_.order_ref is None else f"order {vars_.order_ref}"
+
+
+def _basis_en(vars_: TemplateVars) -> str:
+    if vars_.policy_id is None or vars_.policy_version is None:
+        return ""
+    return f" (per policy {vars_.policy_id}, version {vars_.policy_version})"
+
+
+_MISSING_FIELD_EN: dict[str, str] = {"订单号": "the order number", "工单号": "the ticket number"}
+
+
+def _deny_not_found_en(vars_: TemplateVars) -> str:
+    del vars_
+    return NOT_FOUND_TEXT_EN
+
+
+def _deny_injection_en(vars_: TemplateVars) -> str:
+    del vars_
+    return (
+        "Sorry, I can't process that request. "
+        "If you have a question about an order or after-sales service, just tell me and "
+        "I'll look it up." + HANDOFF_OFFER_EN
+    )
+
+
+def _deny_auth_en(vars_: TemplateVars) -> str:
+    del vars_
+    return (
+        "Sorry, this account doesn't have sufficient permissions for that operation."
+        + HANDOFF_OFFER_EN
+    )
+
+
+def _deny_policy_en(headline: str) -> Callable[[TemplateVars], str]:
+    def render(vars_: TemplateVars) -> str:
+        return (
+            f"Sorry, a refund for {_order_phrase_en(vars_)} can't be processed: {headline}"
+            f"{_basis_en(vars_)}." + HANDOFF_OFFER_EN
+        )
+
+    return render
+
+
+def _human_customer_request_en(vars_: TemplateVars) -> str:
+    del vars_
+    return "Sure, I'm transferring you to a human agent now. Please hold on."
+
+
+def _human_sentiment_en(vars_: TemplateVars) -> str:
+    del vars_
+    return (
+        "I'm sorry this experience has been frustrating. I've transferred you to a human agent, "
+        "and a specialist will follow up shortly."
+    )
+
+
+def _human_tool_failure_en(vars_: TemplateVars) -> str:
+    del vars_
+    return (
+        "Sorry, the system couldn't complete the lookup just now. "
+        "I've transferred you to a human agent. Please hold on."
+    )
+
+
+def _human_tool_budget_en(vars_: TemplateVars) -> str:
+    del vars_
+    return (
+        "This question takes several lookup steps. To save you the wait, "
+        "I've transferred you to a human agent."
+    )
+
+
+def _human_ambiguous_en(vars_: TemplateVars) -> str:
+    return (
+        f"The refund for {_order_phrase_en(vars_)} needs a human agent to confirm which policy "
+        f"applies{_basis_en(vars_)}. I've transferred you to a human agent."
+    )
+
+
+def _human_amount_en(vars_: TemplateVars) -> str:
+    if vars_.amount is None or vars_.max_auto_amount is None:
+        head = (
+            f"The refund amount for {_order_phrase_en(vars_)} exceeds the automatic processing "
+            "limit and needs manual approval"
+        )
+    else:
+        head = (
+            f"The refund for {_order_phrase_en(vars_)} is ¥{_money(vars_.amount)}, which exceeds "
+            f"the ¥{_money(vars_.max_auto_amount)} automatic processing limit and needs manual "
+            "approval"
+        )
+    return (
+        head + _basis_en(vars_) + ". I've submitted it for approval; a specialist will follow up."
+    )
+
+
+def _human_low_confidence_en(vars_: TemplateVars) -> str:
+    del vars_
+    return (
+        "This involves a refund eligibility decision and the policy basis I have isn't sufficient, "
+        "so I've transferred you to a human agent."
+    )
+
+
+def _human_no_result_en(vars_: TemplateVars) -> str:
+    del vars_
+    return (
+        "Sorry, I couldn't find a policy that covers this question, "
+        "so I've transferred you to a human agent."
+    )
+
+
+def _human_dependency_en(vars_: TemplateVars) -> str:
+    del vars_
+    return (
+        "Sorry, a system I need is temporarily unavailable. I've transferred you to a human agent."
+    )
+
+
+def _request_info_en(vars_: TemplateVars) -> str:
+    field = vars_.missing_field or "订单号"
+    return f"To look this up, please provide {_MISSING_FIELD_EN.get(field, field)}."
+
+
+def _require_confirmation_en(vars_: TemplateVars) -> str:
+    head = f"{_order_phrase_en(vars_).capitalize()} is eligible for a refund{_basis_en(vars_)}."
+    if vars_.amount is None:
+        money = " The refund will go back to your original payment method."
+    else:
+        money = (
+            f" The refund of ¥{_money(vars_.amount)} will go back to your original payment method."
+        )
+    return head + money + ' To submit, reply "确认" (confirm); to change anything, just tell me.'
+
+
+def _degrade_en(vars_: TemplateVars) -> str:
+    del vars_
+    return (
+        "Sorry, some information is temporarily unavailable while the service recovers. "
+        "Here's what I could retrieve so far; you can ask again a little later." + HANDOFF_OFFER_EN
+    )
+
+
+def _answer_replay_en(vars_: TemplateVars) -> str:
+    return (
+        f"The refund for {_order_phrase_en(vars_)} was already processed earlier. "
+        "Here is the original result; the system will not refund it again."
+    )
+
+
+def _answer_low_confidence_en(vars_: TemplateVars) -> str:
+    del vars_
+    return (
+        "The following answer is based on policy clauses I retrieved, but their relevance is low "
+        "and they may not fully apply to your situation. Please treat the human agent's reply as "
+        "authoritative." + HANDOFF_OFFER_EN
+    )
+
+
+TEMPLATES_EN: dict[tuple[DecisionOutcome, ReasonCode], Callable[[TemplateVars], str]] = {
+    (DecisionOutcome.DENY, ReasonCode.OWNERSHIP_MISMATCH): _deny_not_found_en,
+    (DecisionOutcome.DENY, ReasonCode.SUSPECTED_INJECTION): _deny_injection_en,
+    (DecisionOutcome.DENY, ReasonCode.AUTH_INSUFFICIENT): _deny_auth_en,
+    (DecisionOutcome.DENY, ReasonCode.POLICY_VIOLATION_WINDOW): _deny_policy_en(
+        "the refund window has passed"
+    ),
+    (DecisionOutcome.DENY, ReasonCode.POLICY_VIOLATION_CATEGORY): _deny_policy_en(
+        "this product category is not refundable"
+    ),
+    (DecisionOutcome.DENY, ReasonCode.POLICY_VIOLATION_CONDITION): _deny_policy_en(
+        "the item's current condition doesn't meet the refund requirements"
+    ),
+    (DecisionOutcome.REQUIRE_HUMAN, ReasonCode.CUSTOMER_ESCALATION_REQUEST): (
+        _human_customer_request_en
+    ),
+    (DecisionOutcome.REQUIRE_HUMAN, ReasonCode.HIGH_NEGATIVE_SENTIMENT): _human_sentiment_en,
+    (DecisionOutcome.REQUIRE_HUMAN, ReasonCode.TOOL_FAILURE_REPEATED): _human_tool_failure_en,
+    (DecisionOutcome.REQUIRE_HUMAN, ReasonCode.TOOL_BUDGET_EXCEEDED): _human_tool_budget_en,
+    (DecisionOutcome.REQUIRE_HUMAN, ReasonCode.POLICY_AMBIGUOUS): _human_ambiguous_en,
+    (DecisionOutcome.REQUIRE_HUMAN, ReasonCode.AMOUNT_ABOVE_AUTO_LIMIT): _human_amount_en,
+    (DecisionOutcome.REQUIRE_HUMAN, ReasonCode.LOW_CONFIDENCE_ON_DECISION): (
+        _human_low_confidence_en
+    ),
+    (DecisionOutcome.REQUIRE_HUMAN, ReasonCode.RETRIEVAL_NO_RESULT): _human_no_result_en,
+    (DecisionOutcome.REQUIRE_HUMAN, ReasonCode.DEPENDENCY_UNAVAILABLE): _human_dependency_en,
+    (DecisionOutcome.REQUEST_INFO, ReasonCode.MISSING_ENTITY): _request_info_en,
+    (DecisionOutcome.REQUIRE_CONFIRMATION, ReasonCode.POLICY_SATISFIED): _require_confirmation_en,
+    (DecisionOutcome.DEGRADE, ReasonCode.DEPENDENCY_UNAVAILABLE): _degrade_en,
+    (DecisionOutcome.ANSWER, ReasonCode.OK): _answer_ok,
+    (DecisionOutcome.ANSWER, ReasonCode.IDEMPOTENT_REPLAY): _answer_replay_en,
+    (DecisionOutcome.ANSWER, ReasonCode.RETRIEVAL_LOW_CONFIDENCE): _answer_low_confidence_en,
+    (DecisionOutcome.ANSWER, ReasonCode.POLICY_SATISFIED): _require_confirmation_en,
+}
+
+#: 语言 → 注册表。两张表的键集合必须相同（tests/test_templates.py 校验）。
+TEMPLATES_BY_LANG: dict[
+    Lang, dict[tuple[DecisionOutcome, ReasonCode], Callable[[TemplateVars], str]]
+] = {
+    "zh": TEMPLATES,
+    "en": TEMPLATES_EN,
+}
+
 
 class MissingTemplateError(KeyError):
     """矩阵产出了没有对应模板的 (终态, reason_code)。属于代码缺陷，不是运行期分支。"""
@@ -269,44 +489,53 @@ class MissingTemplateError(KeyError):
 # --- 五个终态的对外入口 -----------------------------------------------------------
 
 
-def _lookup(outcome: DecisionOutcome, reason_code: ReasonCode, vars_: TemplateVars) -> str:
+def _lookup(
+    outcome: DecisionOutcome,
+    reason_code: ReasonCode,
+    vars_: TemplateVars,
+    lang: Lang = DEFAULT_LANG,
+) -> str:
     try:
-        template = TEMPLATES[(outcome, reason_code)]
+        template = TEMPLATES_BY_LANG[lang][(outcome, reason_code)]
     except KeyError as exc:
-        raise MissingTemplateError(f"no template for {outcome}/{reason_code}") from exc
+        raise MissingTemplateError(f"no template for {outcome}/{reason_code} ({lang})") from exc
     return template(vars_)
 
 
-def deny(reason_code: ReasonCode, vars_: TemplateVars = NO_VARS) -> str:
+def deny(
+    reason_code: ReasonCode, vars_: TemplateVars = NO_VARS, *, lang: Lang = DEFAULT_LANG
+) -> str:
     """DENY 文案。归属类一律返回统一的 not_found 文本，不区分"不存在"与"不属于你"。"""
-    return _lookup(DecisionOutcome.DENY, reason_code, vars_)
+    return _lookup(DecisionOutcome.DENY, reason_code, vars_, lang)
 
 
-def require_human(reason_code: ReasonCode, vars_: TemplateVars = NO_VARS) -> str:
+def require_human(
+    reason_code: ReasonCode, vars_: TemplateVars = NO_VARS, *, lang: Lang = DEFAULT_LANG
+) -> str:
     """REQUIRE_HUMAN 文案。都带明确的"已转接"表述，不留悬念。"""
-    return _lookup(DecisionOutcome.REQUIRE_HUMAN, reason_code, vars_)
+    return _lookup(DecisionOutcome.REQUIRE_HUMAN, reason_code, vars_, lang)
 
 
-def request_info(vars_: TemplateVars = NO_VARS) -> str:
+def request_info(vars_: TemplateVars = NO_VARS, *, lang: Lang = DEFAULT_LANG) -> str:
     """REQUEST_INFO 文案。只索取缺失的那一个实体。"""
-    return _lookup(DecisionOutcome.REQUEST_INFO, ReasonCode.MISSING_ENTITY, vars_)
+    return _lookup(DecisionOutcome.REQUEST_INFO, ReasonCode.MISSING_ENTITY, vars_, lang)
 
 
-def require_confirmation(vars_: TemplateVars = NO_VARS) -> str:
+def require_confirmation(vars_: TemplateVars = NO_VARS, *, lang: Lang = DEFAULT_LANG) -> str:
     """REQUIRE_CONFIRMATION 文案。写操作在此停下，等用户确认（红线 2）。"""
-    return _lookup(DecisionOutcome.REQUIRE_CONFIRMATION, ReasonCode.POLICY_SATISFIED, vars_)
+    return _lookup(DecisionOutcome.REQUIRE_CONFIRMATION, ReasonCode.POLICY_SATISFIED, vars_, lang)
 
 
-def degrade(vars_: TemplateVars = NO_VARS) -> str:
+def degrade(vars_: TemplateVars = NO_VARS, *, lang: Lang = DEFAULT_LANG) -> str:
     """DEGRADE 文案。说明哪部分不可用，并给出转人工入口。"""
-    return _lookup(DecisionOutcome.DEGRADE, ReasonCode.DEPENDENCY_UNAVAILABLE, vars_)
+    return _lookup(DecisionOutcome.DEGRADE, ReasonCode.DEPENDENCY_UNAVAILABLE, vars_, lang)
 
 
-def low_confidence_disclosure() -> str:
+def low_confidence_disclosure(lang: Lang = DEFAULT_LANG) -> str:
     """FR-308 的低置信声明（含 handoff_offer）。由 `respond` 节点拼在回答正文之前。"""
-    return _answer_low_confidence(NO_VARS)
+    return _lookup(DecisionOutcome.ANSWER, ReasonCode.RETRIEVAL_LOW_CONFIDENCE, NO_VARS, lang)
 
 
-def render(decision: Decision, vars_: TemplateVars = NO_VARS) -> str:
-    """按 `Decision` 取骨架。`ANSWER` / `OK` 返回空串，表示该分支不受话术约束。"""
-    return _lookup(decision.outcome, decision.reason_code, vars_)
+def render(decision: Decision, vars_: TemplateVars = NO_VARS, *, lang: Lang = DEFAULT_LANG) -> str:
+    """按 `Decision` 与语言取骨架。`ANSWER` / `OK` 返回空串，表示该分支不受话术约束。"""
+    return _lookup(decision.outcome, decision.reason_code, vars_, lang)

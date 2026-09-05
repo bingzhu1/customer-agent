@@ -29,6 +29,9 @@ class AgentState(TypedDict, total=False):
     #: 长期记忆命中（§10 ④ 层，**非权威**）。只能进 respond 的 prompt，
     #: 绝不进 policy_gate / decide——由 tests/test_memory_wiring.py 反向校验。
     memory_hints: list[MemoryRecord]
+    #: 回复语言（"zh" / "en"），确定性规则：本轮要求 → 记忆 language_preference → 中文。
+    #: 只被 respond 消费（选模板语言、告诉模型用哪种语言写），不进任何判定。
+    reply_language: str
 
     # understand（LLM 写）
     understanding: Understanding

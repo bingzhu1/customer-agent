@@ -295,3 +295,113 @@ def test_deny_rejects_a_reason_code_from_another_outcome() -> None:
         deny(ReasonCode.CUSTOMER_ESCALATION_REQUEST, EMPTY)
     with pytest.raises(MissingTemplateError):
         require_human(ReasonCode.OWNERSHIP_MISMATCH, EMPTY)
+
+
+# --- 英文骨架 -------------------------------------------------------------------
+# 与中文一一对应，三条硬约束同样成立。语言由调用方按 domain/language 的确定性规则选。
+
+from cs_agent.decision.templates import (  # noqa: E402
+    HANDOFF_OFFER_EN,
+    NOT_FOUND_TEXT_EN,
+    TEMPLATES_BY_LANG,
+    TEMPLATES_EN,
+)
+from cs_agent.domain.wording import find_certainty_words_en  # noqa: E402
+
+LEAKY_WORDS_EN = (
+    "not yours",
+    "belongs to",
+    "another user",
+    "someone else",
+    "does exist",
+    "not authorized",
+    "other customer",
+)
+
+
+def test_english_registry_covers_exactly_the_same_pairs() -> None:
+    assert set(TEMPLATES_EN) == set(TEMPLATES)
+    assert set(TEMPLATES_BY_LANG) == {"zh", "en"}
+
+
+@pytest.mark.parametrize(
+    ("outcome", "reason"),
+    sorted(TEMPLATES_EN, key=str),
+    ids=[f"{o}/{r}" for o, r in sorted(TEMPLATES_EN, key=str)],
+)
+@pytest.mark.parametrize("vars_", [FULL, EMPTY], ids=["full", "empty"])
+def test_english_templates_are_total_clean_and_leak_free(
+    outcome: DecisionOutcome, reason: ReasonCode, vars_: TemplateVars
+) -> None:
+    text = render(Decision(outcome, reason, "x"), vars_, lang="en")
+    assert text == render(Decision(outcome, reason, "x"), vars_, lang="en")
+    if (outcome, reason) == (DecisionOutcome.ANSWER, ReasonCode.OK):
+        assert text == ""
+        return
+    assert text.strip()
+    assert "None" not in text and "{" not in text and "}" not in text
+    # 英文骨架里不该混进中文句子（策略摘要刻意不渲染）；「确认」是确认口令，允许
+    assert not [ch for ch in text.replace("确认", "") if "一" <= ch <= "鿿"], text
+    assert find_certainty_words_en(text) == []
+    assert not [w for w in LEAKY_WORDS_EN if w in text.lower()]
+
+
+def test_english_ownership_denial_is_identical_and_leaks_nothing() -> None:
+    others = deny(ReasonCode.OWNERSHIP_MISMATCH, TemplateVars(order_ref="90211"), lang="en")
+    missing = deny(ReasonCode.OWNERSHIP_MISMATCH, TemplateVars(order_ref="77777"), lang="en")
+    assert (
+        others
+        == missing
+        == NOT_FOUND_TEXT_EN
+        == deny(ReasonCode.OWNERSHIP_MISMATCH, FULL, lang="en")
+    )
+    for secret in ("陈静", "王芳", "59", "199", "90210", "90211", "77777"):
+        assert secret not in NOT_FOUND_TEXT_EN
+
+
+def test_english_escalations_offer_or_state_a_human() -> None:
+    for reason in (
+        ReasonCode.CUSTOMER_ESCALATION_REQUEST,
+        ReasonCode.HIGH_NEGATIVE_SENTIMENT,
+        ReasonCode.TOOL_FAILURE_REPEATED,
+        ReasonCode.TOOL_BUDGET_EXCEEDED,
+        ReasonCode.POLICY_AMBIGUOUS,
+        ReasonCode.LOW_CONFIDENCE_ON_DECISION,
+        ReasonCode.RETRIEVAL_NO_RESULT,
+        ReasonCode.DEPENDENCY_UNAVAILABLE,
+    ):
+        assert "human agent" in require_human(reason, FULL, lang="en")
+    assert "approval" in require_human(ReasonCode.AMOUNT_ABOVE_AUTO_LIMIT, FULL, lang="en")
+    assert HANDOFF_OFFER_EN in low_confidence_disclosure("en")
+    assert HANDOFF_OFFER_EN in degrade(lang="en")
+
+
+def test_english_policy_basis_and_confirmation() -> None:
+    for reason in (
+        ReasonCode.POLICY_VIOLATION_WINDOW,
+        ReasonCode.POLICY_VIOLATION_CATEGORY,
+        ReasonCode.POLICY_VIOLATION_CONDITION,
+    ):
+        text = deny(reason, FULL, lang="en")
+        assert "REFUND-STD-001" in text and "version 3" in text
+    assert "per policy" not in deny(
+        ReasonCode.POLICY_VIOLATION_WINDOW, TemplateVars(order_ref="82915"), lang="en"
+    )
+    confirm = require_confirmation(FULL, lang="en")
+    assert "REFUND-STD-001" in confirm and "620.00" in confirm and "确认" in confirm
+
+
+def test_english_request_info_maps_the_field_name() -> None:
+    assert request_info(TemplateVars(missing_field="订单号"), lang="en") == (
+        "To look this up, please provide the order number."
+    )
+    assert "ticket number" in request_info(TemplateVars(missing_field="工单号"), lang="en")
+    assert request_info(EMPTY, lang="en") == request_info(
+        TemplateVars(missing_field="订单号"), lang="en"
+    )
+
+
+def test_default_language_is_chinese() -> None:
+    assert render(Decision(DecisionOutcome.REQUEST_INFO, ReasonCode.MISSING_ENTITY, "x")) == (
+        request_info(EMPTY)
+    )

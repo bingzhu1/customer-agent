@@ -302,3 +302,55 @@ def test_money_tools_skipped_for_foreign_order(session: Session) -> None:
         Understanding(intent="refund_status", order_id=90210),
     )
     assert [c.name for c in state["tool_calls"]] == ["get_order"]
+
+
+# ---- 回复语言 ----
+
+
+def test_turn_language_request_switches_template_language(session: Session) -> None:
+    """ "以后用英文回答"这一轮本身缺订单号 → REQUEST_INFO 走模板，模板要是英文的。"""
+    state = _run(session, "以后用英文回答，帮我查一下订单", Understanding(intent="order_status"))
+    assert state["reply_language"] == "en"
+    assert state["decision"].reason_code is ReasonCode.MISSING_ENTITY
+    assert state["reply"] == "To look this up, please provide the order number."
+
+
+def test_memory_language_preference_switches_language(session: Session) -> None:
+    """记忆里的 language_preference 只改语言：模板变英文，判定不变。"""
+    from cs_agent.memory.user_memory import MemoryRecord
+
+    class StubMemory:
+        def search(self, user_id: int, text: str) -> list[MemoryRecord]:
+            return [
+                MemoryRecord(
+                    id=1,
+                    user_id=user_id,
+                    mem_key="language_preference",
+                    mem_value="用户希望用英文沟通",
+                    confidence=0.95,
+                    version=1,
+                )
+            ]
+
+    belt = _belt(session)
+    llm = FakeLlm(Understanding(intent="order_status"))
+    deps = Deps(
+        llm=llm,  # type: ignore[arg-type]
+        tools=belt,
+        policies=belt.policies,
+        now=EVAL_NOW,
+        auth=AuthContext.of(MAIN_USER, [Role.CUSTOMER]),
+        memory=StubMemory(),  # type: ignore[arg-type]
+    )
+    state = build_graph(deps).invoke(
+        {"user_text": "帮我查一下订单"}, config={"configurable": {"thread_id": "lang-mem"}}
+    )
+    assert state["reply_language"] == "en"
+    assert state["decision"].reason_code is ReasonCode.MISSING_ENTITY
+    assert state["reply"] == "To look this up, please provide the order number."
+
+
+def test_language_defaults_to_chinese(session: Session) -> None:
+    state = _run(session, "帮我查一下订单", Understanding(intent="order_status"))
+    assert state["reply_language"] == "zh"
+    assert state["reply"] == "为了帮你查询，请提供订单号。"
