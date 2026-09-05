@@ -71,8 +71,8 @@ def test_foreign_order_denied_and_usage_accumulated(agent: V1ToolsAgent) -> None
     assert result.decision is DecisionOutcome.DENY
     assert result.reason_code is ReasonCode.OWNERSHIP_MISMATCH
     assert [c.name for c in result.tool_calls] == ["get_order"]
-    # 两次模型调用（understand + respond）都要计入 usage
-    assert result.usage.llm_calls == 2
+    # 拒绝话术走确定性模板（FR-407），respond 不再调模型，所以本轮只有 understand 一次
+    assert result.usage.llm_calls == 1
     assert result.debug["rule_no"] == "1"
 
 
