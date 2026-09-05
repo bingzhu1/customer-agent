@@ -243,6 +243,8 @@
 | FR-908 | 超时 / 重试 / 模型降级 / 熔断 | P0 | 故障注入测试通过 | 6 |
 | FR-909 | 优雅降级 | P0 | 向量库不可用时降级或转人工，绝不编造 | 6 |
 | FR-910 | Grafana 面板 | P1 | 覆盖 §14.2 全部指标 | 6 |
+| FR-911 | Prompt caching | P0 | `usage.cache_read_input_tokens` 在重复请求中稳定 > 0；system 与工具定义位于缓存前缀 | 1 |
+| FR-912 | 分节点 effort 调档 | P0 | `understand` 用 `low`，`respond` 用 `high`，可配置 | 1 |
 
 ---
 
@@ -913,6 +915,8 @@ CaseFacts
       │  metadata: {policy_id, policy_version, category, anchor, effective_date}
       ▼
   ② EMBEDDING   text-embedding-3-small(1536) → pgvector，HNSW，cosine
+                 注：Anthropic 不提供 embedding 接口，向量化走独立 provider。
+                 备选 Voyage AI；选型见 §13.4 未决项。
       │
       ▼
   ③ RETRIEVAL
@@ -1061,7 +1065,7 @@ CaseFacts
 | SSE 首字节时间（TTFB） | p95 < 1.5s | 用户感知的响应速度 |
 | 端到端延迟（无工具调用） | p95 < 3s | 纯政策问答 |
 | 端到端延迟（含工具调用） | p95 < 6s | 查订单 + 检索 |
-| 单次会话成本 | 目标 < $0.05 | 按 5 轮对话估算 |
+| 单次会话成本 | 目标 < $0.05 | 按 5 轮对话估算；**该目标依赖 prompt caching，见 §13.4** |
 | 数据库查询 | p95 < 100ms | 单条业务查询 |
 | 向量检索 | p95 < 200ms | top_k = 8 |
 
@@ -1082,6 +1086,59 @@ CaseFacts
 ### 13.3 容量假设（用于容量设计说明，非压测目标）
 
 单实例、并发会话 ≤ 50、日活会话 ≤ 5000、策略语料 ≤ 500 chunk、业务数据 ≤ 10 万订单。超出此规模需要的改造列在 §17。
+
+
+### 13.4 模型配置与成本口径
+
+#### 模型选型
+
+| 用途 | 模型 | Model ID | 定价（输入 / 输出，每 1M token） |
+|---|---|---|---|
+| 主模型 | Claude Sonnet 5 | `claude-sonnet-5` | $2.00 / $10.00 |
+| 降级备用 | Claude Haiku 4.5 | `claude-haiku-4-5` | $1.00 / $5.00 |
+| 向量化 | text-embedding-3-small（独立 provider） | — | 另计 |
+
+主模型上下文窗口 1M；备用模型 200K——**降级时上下文压缩必须已生效**，否则长会话会直接超限。
+
+#### Sonnet 5 的 API 约束（直接影响实现）
+
+| 约束 | 影响 |
+|---|---|
+| `thinking` 只支持 `{type: "adaptive"}`，`budget_tokens` 已移除（传入报 400） | 思考深度用 `output_config.effort` 控制，不要写 `budget_tokens` |
+| 不支持 assistant prefill（报 400） | 结构化输出走 `output_config.format`，不要用 prefill 强制格式 |
+| **不支持 mid-conversation system message** | 运行时的操作指令只能放顶层 `system`——而顶层 `system` 变动会击穿 prompt cache，因此 system 必须保持稳定 |
+| `effort` 支持 `low` / `medium` / `high` / `xhigh` / `max` | `understand` 节点用 `low`，`respond` 节点用 `high`；分节点调档是主要的成本杠杆 |
+| 支持 prompt caching 与 task budget | 见下 |
+
+#### 成本口径与一个必须正视的结论
+
+按基础价格估算，**未做任何优化**的单会话成本：
+
+```
+5 轮对话 × 每轮约 3 次模型调用 = 约 15 次调用
+平均输入 ≈ 6K token/次  → 约 90K token → $0.18
+平均输出 ≈ 200 token/次 → 约 3K token  → $0.03
+                                    合计 ≈ $0.21
+```
+
+**这比 $0.05 的目标高约 4 倍。** 因此 $0.05 不是一个"顺手就能达到"的数字，它要求三件事同时成立：
+
+1. **Prompt caching 必须是 P0**，不是优化项。
+   渲染顺序 `tools → system → messages`，把稳定内容（system prompt、工具定义）放最前并打 cache 断点，
+   波动内容（本轮问题、检索结果）放断点之后。
+   用 `usage.cache_read_input_tokens` 验证命中；连续为 0 说明有静默失效源。
+2. **控制每轮模型调用次数**。`understand` 与 `act` 在简单意图下应可合并；
+   评估指标 `unnecessary LLM calls` 就是盯这个。
+3. **上下文压缩必须早于成本达标**（Phase 5 的 CaseFacts 方案）。
+   这也是 V5 那一行"token 下降"的来源。
+
+在三者落地前，成本指标只记录不考核。Phase 6 才把 $0.05 作为门槛。
+**若 Phase 6 实测仍显著超标，正确做法是修订目标并说明原因，不是粉饰数据。**
+
+#### 未决项
+
+向量化 provider 尚未最终确定（OpenAI `text-embedding-3-small` vs Voyage AI）。
+影响：多一个 API key 与一份配额管理。Phase 2 开工前定。
 
 ---
 

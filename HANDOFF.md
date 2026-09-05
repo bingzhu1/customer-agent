@@ -12,7 +12,7 @@
 - **Phase**：Phase 0 未开始（PRD 与工作规则已成文，等用户评审通过）
 - **分支**：`main`
 - **最新 commit**：见 `git log -1`
-- **仓库**：https://github.com/bingzhu1/customer-agent （private）
+- **仓库**：https://github.com/bingzhu1/customer-agent （public）
 - **代码**：尚未写任何代码。目前只有文档。
 
 ---
@@ -41,12 +41,15 @@
 
 | # | 问题 | 等谁 |
 |---|---|---|
-| 1 | PRD §13.1 的性能目标数字（p95 < 6s、单会话 < $0.05）是否认可 | 用户 |
-| 2 | LLM provider 选哪家、哪个模型档位（影响成本估算与 fallback 设计） | 用户 |
-| 3 | 仓库是否要改为 public（面试展示用） | 用户 |
-| 4 | ADR-0007 的 τ_low / τ_high 实测值 | Phase 2 标定后回填 |
+| 1 | 向量化 provider：OpenAI `text-embedding-3-small` vs Voyage AI（多一个 key 与配额） | 用户，Phase 2 前 |
+| 2 | 单会话成本目标 $0.05 是否维持（基础价估算约 $0.21，需 caching + 调用数控制 + 压缩三者同时到位） | 用户 |
+| 3 | ADR-0007 的 τ_low / τ_high 实测值 | Phase 2 标定后回填 |
 
----
+### 已定（2026-09-05）
+
+- 性能目标（PRD §13.1）：认可
+- 主模型：**Claude Sonnet 5**（`claude-sonnet-5`），降级备用 Claude Haiku 4.5（`claude-haiku-4-5`）
+- 仓库可见性：已转 **public**
 
 ## 已知坑
 
