@@ -71,12 +71,17 @@ export function useWorkspace(client: ApiClient, onLogout: () => void) {
     }
   }, [client, failure])
 
-  // 进页面时如果一条会话都没有，就建一条
+  // 进页面时如果一条会话都没有，就建一条。
+  // 守卫在 cleanup 里重置：开发模式 StrictMode 会挂载→卸载→再挂载，卸载时上面的 effect
+  // 把在途的 createThread 中断了，不重置就再也建不出会话（症状：输入框一直禁用）。
   const bootstrapped = useRef(false)
   useEffect(() => {
     if (bootstrapped.current) return
     bootstrapped.current = true
     void newThread()
+    return () => {
+      bootstrapped.current = false
+    }
   }, [newThread])
 
   const select = useCallback((id: string) => dispatch({ type: 'thread.select', id }), [])

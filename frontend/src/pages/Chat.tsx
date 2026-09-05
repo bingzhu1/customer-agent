@@ -104,6 +104,17 @@ export default function Chat({ client, identity, ws, onLogout }: Props) {
 
         <div className="timeline">
           <div className="timeline-inner">
+            {!thread && !ws.creating && (
+              <div className="empty">
+                <p className="muted">没有可用的会话。</p>
+                <div className="row">
+                  <button className="chip" onClick={() => void ws.newThread()}>
+                    重新创建会话
+                  </button>
+                </div>
+              </div>
+            )}
+
             {items.length === 0 && thread && (
               <div className="empty">
                 <p className="muted">回复由模型生成，退款、拒绝、转人工由策略引擎判定。试试：</p>
