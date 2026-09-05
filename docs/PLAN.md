@@ -85,7 +85,7 @@ prompt caching、记忆压缩与三方对比、人工控制台、混沌测试。
 - [x] M2 OpenAI embeddings + FakeEmbeddings + 迁移 0003 pgvector/HNSW + ingest · `0180ce7`
 - [~] M3 PolicyRetriever（top-k + τ 门控 band）已交付；`search_policy` 工具换用它 —— P1 冲刺后接；查询改写（FR-302）未做
 - [~] M4 引用后置校验纯函数 `rag/citations.py` 已交付；接进 respond 节点 —— P1；低置信模板已在 decision/templates（P3）
-- [~] M5 `scripts/calibrate_tau.py` 已交付；真跑标定 + 回填 ADR-0007 —— P2；`protocol.TurnResult.retrieved` —— master
+- [~] M5 τ 标定已真跑并写入 ADR-0007（`c99f9fd`）：负样本仅 1 条，机械值不可靠，settings 仍占位 0.30/0.60；待补 4–5 条负样本 golden 后重标 —— P2 + master；`protocol.TurnResult.retrieved` —— master
 - [ ] M6 `make eval AGENT=v2`
 
 **DoD**
