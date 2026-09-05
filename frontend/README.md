@@ -121,8 +121,13 @@ npm run lint    # eslint
 npm run build   # tsc -b && vite build
 
 # 对真实后端的联调冒烟（默认跳过；要先在仓库根 APP_ENV=dev 起服务）
-VITE_INTEGRATION=1 npm run test
+VITE_INTEGRATION=1 npm run test        # 只读，不写库
+VITE_INTEGRATION_WRITE=1 npm run test  # 额外跑确认退款，会真的写 biz.refunds
 ```
+
+**写用例为什么默认关**：demo 与 eval 共用同一个库，确认退款会被评估的副作用探针
+记成用例副作用（over-refund 指标被污染）。评估在跑时不要开这个开关，也不要在
+真实后端上反复点确认。
 
 联调测试会真的调模型（一轮约 10–35 秒），断言只挑契约层面的点：
 82913 → `REQUIRE_CONFIRMATION` / `POLICY_SATISFIED`、`amount="89.00"`、可点的 `action_id`；
