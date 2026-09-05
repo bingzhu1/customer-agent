@@ -1,7 +1,7 @@
 """决策层升级矩阵测试（PRD §9.4，FR-404/405/406）。
 
 三件事：
-1. §9.4 的 18 个分支（16 条规则 + 10.5 + 14b）每个至少一个命中用例；
+1. §9.4 的 19 个分支（16 条规则 + 6b + 10.5 + 14b）每个至少一个命中用例；
 2. 顺序关系不能被改坏——规则 1 压过一切、10.5 压过 12、11 在 12 之前、14 缺引用退回 14b；
 3. 契约 §2 的关键订单从 PolicyFacts 一路走到终态，与契约"关键事实 → 期望"一致。
 """
@@ -87,6 +87,12 @@ RULE_HITS: list[tuple[str, DecisionInput, DecisionOutcome, ReasonCode]] = [
         DecisionInput(repeated_tool_failure=True),
         DecisionOutcome.REQUIRE_HUMAN,
         ReasonCode.TOOL_FAILURE_REPEATED,
+    ),
+    (
+        "6b",
+        DecisionInput(tool_budget_exceeded=True),
+        DecisionOutcome.REQUIRE_HUMAN,
+        ReasonCode.TOOL_BUDGET_EXCEEDED,
     ),
     (
         "7",
@@ -193,8 +199,8 @@ RULE_HITS: list[tuple[str, DecisionInput, DecisionOutcome, ReasonCode]] = [
 
 
 def test_every_matrix_branch_has_a_case() -> None:
-    """§9.4 的 18 个分支一个不落。"""
-    expected = {str(i) for i in range(1, 17)} | {"10.5", "14b"}
+    """§9.4 的 19 个分支一个不落。"""
+    expected = {str(i) for i in range(1, 17)} | {"6b", "10.5", "14b"}
     assert {row[0] for row in RULE_HITS} == expected
 
 
@@ -248,6 +254,23 @@ def test_rule_1_beats_everything() -> None:
                 amount=Decimal("89.00"),
                 is_write_intent=True,
             ),
+        ),
+        # 6b 压过 12：工具预算耗尽时不许还走到"请用户确认"
+        (
+            "6b",
+            "12",
+            DecisionInput(
+                tool_budget_exceeded=True,
+                verdict=allow_verdict(),
+                amount=Decimal("89.00"),
+                is_write_intent=True,
+            ),
+        ),
+        # 6 压过 6b：同时成立时报更具体的连续失败
+        (
+            "6",
+            "6b",
+            DecisionInput(repeated_tool_failure=True, tool_budget_exceeded=True),
         ),
         # 8 压过 9：有明确拒绝就不该报"政策歧义"
         (
@@ -306,7 +329,7 @@ def test_rule_1_beats_everything() -> None:
             ),
         ),
     ],
-    ids=["2>12", "8>9", "10>11", "10.5>12", "11>12", "13>15"],
+    ids=["2>12", "6b>12", "6>6b", "8>9", "10>11", "10.5>12", "11>12", "13>15"],
 )
 def test_priority(earlier: str, later: str, inp: DecisionInput) -> None:
     """两条规则同时满足时，必须由靠前的那条给出结论。"""
@@ -486,14 +509,20 @@ VERDICT_VARIANTS: list[PolicyVerdict | None] = [
 ]
 SCORE_VARIANTS: list[float | None] = [None, 0.05, 0.50, 0.95]
 AMOUNT_VARIANTS: list[Decimal | None] = [None, Decimal("100.00"), Decimal("250.00")]
-VALID_RULE_NOS = {str(i) for i in range(1, 17)} | {"10.5", "14b"}
+VALID_RULE_NOS = {str(i) for i in range(1, 17)} | {"6b", "10.5", "14b"}
+# 预先算好：放在循环里会让 68 万次迭代每次重建一个集合
+VALID_OUTCOMES = frozenset(DecisionOutcome)
+VALID_REASONS = frozenset(ReasonCode)
+TRIPLES = [
+    (v, s, a) for v, s, a in itertools.product(VERDICT_VARIANTS, SCORE_VARIANTS, AMOUNT_VARIANTS)
+]
 
 
 def test_decide_is_total_over_all_input_combinations() -> None:
-    """穷举 2^12 × verdict × score × amount 组合：终态与 reason_code 必须在枚举内，
+    """穷举 2^13 × verdict × score × amount 组合：终态与 reason_code 必须在枚举内，
     rule_no 必须非空且是 §9.4 中真实存在的行号——决策层没有"掉出表外"的输入。"""
     checked = 0
-    for flags in itertools.product([False, True], repeat=12):
+    for flags in itertools.product([False, True], repeat=13):
         (
             ownership_ok,
             injection,
@@ -501,6 +530,7 @@ def test_decide_is_total_over_all_input_combinations() -> None:
             wants_human,
             sentiment,
             tool_fail,
+            budget_out,
             dep_down,
             write,
             eligibility,
@@ -508,9 +538,7 @@ def test_decide_is_total_over_all_input_combinations() -> None:
             replay,
             missing,
         ) = flags
-        for verdict, score, amount in itertools.product(
-            VERDICT_VARIANTS, SCORE_VARIANTS, AMOUNT_VARIANTS
-        ):
+        for verdict, score, amount in TRIPLES:
             d = decide(
                 DecisionInput(
                     ownership_ok=ownership_ok,
@@ -519,6 +547,7 @@ def test_decide_is_total_over_all_input_combinations() -> None:
                     customer_requests_human=wants_human,
                     high_negative_sentiment=sentiment,
                     repeated_tool_failure=tool_fail,
+                    tool_budget_exceeded=budget_out,
                     dependency_unavailable=dep_down,
                     verdict=verdict,
                     amount=amount,
@@ -532,11 +561,11 @@ def test_decide_is_total_over_all_input_combinations() -> None:
                     missing_entity=missing,
                 )
             )
-            assert d.outcome in set(DecisionOutcome)
-            assert d.reason_code in set(ReasonCode)
+            assert d.outcome in VALID_OUTCOMES
+            assert d.reason_code in VALID_REASONS
             assert d.rule_no in VALID_RULE_NOS
             checked += 1
-    assert checked == 2**12 * len(VERDICT_VARIANTS) * len(SCORE_VARIANTS) * len(AMOUNT_VARIANTS)
+    assert checked == 2**13 * len(TRIPLES)
 
 
 def test_write_intent_never_reaches_confirmation_without_an_allow_verdict() -> None:
