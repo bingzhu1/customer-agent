@@ -19,6 +19,7 @@
 | v1.1 | 2026-09-05 | §8.1 增加 `GET /v1/whoami` 认证自检接口（Phase 1 实现时提出，用户同意） |
 | v1.2 | 2026-09-05 | §12.6 V0 行填入实测值；分析见 `docs/eval/v0-baseline.md` |
 | v1.3 | 2026-09-05 | §12.6 V1 / V3 行填入实测值（V2 跳过：RAG 零件先于接线交付） |
+| v1.4 | 2026-09-05 | §9.4 增加规则 6b：TOOL_BUDGET_EXCEEDED 进矩阵（原为矩阵外钳位，Phase 3 提出） |
 
 ---
 
@@ -733,6 +734,7 @@ data: {"code": "LLM_TIMEOUT", "retryable": true, "message": "..."}
 | 4 | 用户明确要求人工 | `REQUIRE_HUMAN` | `CUSTOMER_ESCALATION_REQUEST` | 正在为你转接 |
 | 5 | 强负面情绪 / 投诉升级信号 | `REQUIRE_HUMAN` | `HIGH_NEGATIVE_SENTIMENT` | 转人工 |
 | 6 | 同一工具连续失败 ≥ 2 次 | `REQUIRE_HUMAN` | `TOOL_FAILURE_REPEATED` | 系统繁忙，已转人工 |
+| 6b | 单轮工具调用超出预算（FR-210） | `REQUIRE_HUMAN` | `TOOL_BUDGET_EXCEEDED` | 系统繁忙，已转人工 |
 | 7 | 关键依赖不可用 | `DEGRADE`（无法回答则 `REQUIRE_HUMAN`） | `DEPENDENCY_UNAVAILABLE` | 部分信息暂不可用 |
 | 8 | PolicyVerdict = DENY | `DENY` | `POLICY_VIOLATION_*` | 引用具体政策说明原因 |
 | 9 | 无匹配规则 / 规则冲突 | `REQUIRE_HUMAN` | `POLICY_AMBIGUOUS` | 政策需人工确认 |
