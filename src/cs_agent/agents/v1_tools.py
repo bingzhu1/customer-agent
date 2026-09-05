@@ -71,6 +71,7 @@ class GraphSession(AgentSession):
             tools=self._belt,
             policies=policies,
             now=now,
+            auth=auth,
             enable_policy_gate=enable_policy_gate,
         )
         self._graph = build_graph(self._deps)

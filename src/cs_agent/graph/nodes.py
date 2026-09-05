@@ -18,11 +18,14 @@ V3 有了 `verdict`，超期 / 食品 / 定制会被**确定性地**拒绝并引
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
+from cs_agent.auth.context import AuthContext
+from cs_agent.decision import templates
 from cs_agent.decision.matrix import Decision, DecisionInput
 from cs_agent.decision.matrix import decide as run_matrix
 from cs_agent.domain.enums import DecisionOutcome, ItemCategory, ItemCondition, ReasonCode
@@ -47,8 +50,24 @@ class Deps:
     tools: ToolBelt
     policies: PolicySet
     now: datetime
+    #: 服务端身份。只给确定性代码做越权兜底判断用，**永不进入任何 prompt**。
+    auth: AuthContext | None = None
     #: V1 关、V3 开。关掉时 verdict 恒为 None。
     enable_policy_gate: bool = False
+
+
+#: 消息里直接点名某个 user 编号的写法。确定性兜底，不依赖 LLM 是否标对了字段。
+OTHER_USER_RE = re.compile(r"user[\s_#:=-]*(\d{2,})", re.IGNORECASE)
+
+
+def references_foreign_user(text: str, deps: Deps) -> bool:
+    """消息里点名了**别人**的 user 编号。
+
+    授权判定不能建立在"模型有没有标对布尔值"之上（SEC-008 就是这么漏的），
+    所以在 LLM 的 `references_other_user` 之外再加这一层纯正则兜底。
+    """
+    own = deps.auth.user_id if deps.auth is not None else None
+    return any(int(m.group(1)) != own for m in OTHER_USER_RE.finditer(text or ""))
 
 
 def ingest(state: AgentState, deps: Deps) -> AgentState:
@@ -161,10 +180,19 @@ def decide(state: AgentState, deps: Deps) -> AgentState:
     amount = Decimal(order["total_amount"]) if order else None
     eligibility = u.intent in ELIGIBILITY_INTENTS
 
+    # 自称更高权限、或索取他人数据 → 角色不足（矩阵规则 3）。
+    # 三个来源取或：LLM 的两个标注 + 不依赖 LLM 的正则兜底。
+    role_sufficient = not (
+        u.claims_elevated_role
+        or u.references_other_user
+        or references_foreign_user(state.get("user_text", ""), deps)
+    )
+
     decision = run_matrix(
         DecisionInput(
             ownership_ok=state.get("ownership_ok", True),
             injection_suspected=state.get("injection_suspected", False),
+            role_sufficient=role_sufficient,
             customer_requests_human=u.wants_human or u.intent == "human_request",
             high_negative_sentiment=u.negative_sentiment,
             verdict=verdict,
@@ -185,12 +213,29 @@ def decide(state: AgentState, deps: Deps) -> AgentState:
 
 
 def respond(state: AgentState, deps: Deps) -> AgentState:
-    """LLM 把已定的决策说成人话。引用由确定性代码给定，模型不能自己编 policy_id。"""
+    """先取确定性话术骨架，取不到才让 LLM 写。
+
+    拒绝、升级、索取信息、待确认这些分支的措辞**完全由 `decision/templates` 决定**
+    （FR-407）：口径不随模型漂移，"他人订单"与"不存在订单"逐字相同（SEC-010），
+    也不会把用户消息里的注入原文复述回去（SEC-004）。
+
+    只有 ANSWER / OK 这一类真要回答内容的分支才调模型——那时它能用的事实
+    已经全在 prompt 里，引用也由确定性代码给定，模型编不出 policy_id。
+    """
+    decision = state["decision"]
     verdict: PolicyVerdict | None = state.get("verdict")
     citations = _citations(state, verdict)
+    skeleton = templates.render(decision, _template_vars(state, verdict, deps))
 
-    prompt = _render_prompt(state, citations)
-    reply, usage = deps.llm.respond(prompt)
+    if decision.outcome is not DecisionOutcome.ANSWER:
+        # 非 ANSWER 的分支**逐字**用模板，绝不让模型改写（FR-407）：
+        # 模型改写过的拒绝会复述用户的注入原文，两次"未找到"也会措辞不一致。
+        return {"reply": skeleton, "citations": citations, "usage": state.get("usage", Usage())}
+    if skeleton and decision.reason_code is not ReasonCode.RETRIEVAL_LOW_CONFIDENCE:
+        return {"reply": skeleton, "citations": citations, "usage": state.get("usage", Usage())}
+
+    body, usage = deps.llm.respond(_render_prompt(state, citations))
+    reply = f"{skeleton}{body}" if skeleton else body
     return {
         "reply": reply,
         "citations": citations,
@@ -206,6 +251,30 @@ def _no_looser(current: Decision, outcome: DecisionOutcome, reason: ReasonCode) 
     if current.outcome is DecisionOutcome.DENY:
         return current
     return Decision(outcome, reason, current.rule_no)
+
+
+def _template_vars(
+    state: AgentState, verdict: PolicyVerdict | None, deps: Deps
+) -> templates.TemplateVars:
+    """模板只吃结构化变量。`policy_summary` 取策略正文首句——确定规则，不是模型转述。"""
+    order = state.get("order")
+    u: Understanding = state.get("understanding") or Understanding()
+    summary: str | None = None
+    if verdict is not None and verdict.policy_id is not None:
+        try:
+            summary = deps.policies.by_id(verdict.policy_id).human_text.strip().splitlines()[0]
+        except KeyError:  # pragma: no cover - 判定与策略集不同源时才会发生
+            summary = None
+    return templates.TemplateVars(
+        # 归属不符的模板刻意不回显订单号，这里给了也不会被用上
+        order_ref=str(u.order_id) if order is not None and u.order_id is not None else None,
+        policy_id=verdict.policy_id if verdict is not None else None,
+        policy_version=verdict.policy_version if verdict is not None else None,
+        policy_summary=summary,
+        amount=Decimal(order["total_amount"]) if order else None,
+        max_auto_amount=verdict.max_auto_amount if verdict is not None else None,
+        missing_field="订单号" if u.ticket_id is None else "工单号",
+    )
 
 
 def _citations(state: AgentState, verdict: PolicyVerdict | None) -> list[Citation]:
@@ -244,7 +313,6 @@ def _render_prompt(state: AgentState, citations: list[Citation]) -> str:
         "系统已经做出的决定（不可更改）：",
         f"- decision: {decision.outcome.value}",
         f"- reason_code: {decision.reason_code.value}",
-        f"- 判定依据规则: §9.4 第 {decision.rule_no} 条",
     ]
     if not state.get("ownership_ok", True):
         lines.append("- 说明：查不到这条记录。只说没找到，不要提任何其他细节。")
