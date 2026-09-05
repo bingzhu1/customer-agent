@@ -53,7 +53,7 @@ prompt caching、记忆压缩与三方对比、人工控制台、混沌测试。
 - [~] M4 LangGraph 最小图 ingest→understand→act→policy_gate→decide→respond（`87b98e0`，MemorySaver）；Postgres checkpointer 推后
 - [x] M5 4 个只读工具，签名无身份字段（FR-208），不可信包装（FR-209），单轮预算（FR-210）· `87b98e0`；search_policy 为关键词占位，Phase 2 替换
 - [ ] M6 中间件：request_id / 限流 429（FR-806）/ 超时；Langfuse trace（FR-902）；prompt caching（FR-911）；分节点 effort（FR-912）
-- [x] M7 实现 `AgentUnderTest` 接线 → `make eval AGENT=v1`，报表入库，对照 V0 · 2026-09-05 · `PENDING`
+- [x] M7 实现 `AgentUnderTest` 接线 → `make eval AGENT=v1`，报表入库，对照 V0 · 2026-09-05 · `efb8082`
 - [ ] 与 Phase 3 接线：`policy_gate` / `decide` 节点调用 P3 的纯函数（Phase 3 交付后）
 
 **DoD**
