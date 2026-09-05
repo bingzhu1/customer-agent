@@ -91,6 +91,12 @@
 - 单会话成本目标 **$0.05 维持**；Phase 6 前只记录不考核（原未决问题 2）
 - 主模型 Claude Sonnet 5（`claude-sonnet-5`），降级 Claude Haiku 4.5（`claude-haiku-4-5`）
 - Docker 运行时用 colima 而非 Docker Desktop（无需 sudo、无 GUI）
+- `GET /v1/whoami` **保留**，master session 已补进 PRD §8.1（v1.1，在 phase0 分支上）
+- **合并顺序**：V0 交付 → `phase0-eval-foundation` → `main`（tag `v0.1-phase0`）→ 本分支再 rebase 到 main。
+  合并时 `tests/test_migrations.py` 以 master 的一次性库（`cs_agent_test`）版为准；
+  `uv.lock` 不手工合，合并后重跑 `uv sync` 重新生成
+- `AgentUnderTest` 接口已在 phase0 分支定稿（`ba08ac8`）：**同步**接口；
+  runner 对并发 confirm 用线程池，async 实现要自持事件循环并保证线程安全
 
 ## 已知坑
 
@@ -118,8 +124,7 @@
   Phase 2 换 pgvector `vector(1536)` 并建 HNSW 索引，届时需要一次 ALTER 迁移。
 - Phase 0 的 milestone 3（eval runner）与 milestone 4（V0 baseline）**尚未完成**，
   Phase 0 未开 PR；Phase 1 先行，最后一并合入。
-- `GET /v1/whoami` 是我加的**认证自检接口**，PRD §8.1 没有它；留着方便手工验证链路，
-  不想要的话删掉即可，没有别的代码依赖它。
+- `GET /v1/whoami` 是本分支加的**认证自检接口**；用户已拍板保留，PRD §8.1 v1.1 已补上。
 - 中间件里**不能 raise `ApiError`**：异常处理器挂在更内层，中间件抛出的异常会直接变 500，
   必须 `return error_response(...)`。
 - `BaseHTTPMiddleware` 的 `call_next` 在独立 task 里跑，内层绑的 contextvars 传不回外层，
