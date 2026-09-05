@@ -201,6 +201,18 @@ export default function CustomerChat({ client, ws, onLogout }: Props) {
 
       <div className="c-timeline">
         <div className="c-timeline-inner">
+          {!thread && !ws.creating && (
+            <div className="c-turn c-turn-agent">
+              <Avatar size={32} />
+              <div className="c-stack">
+                <div className="c-bubble">连接客服时出了点问题。</div>
+                <button className="chip" onClick={() => void ws.newThread()}>
+                  重新连接
+                </button>
+              </div>
+            </div>
+          )}
+
           {items.length === 0 && thread && (
             <div className="c-turn c-turn-agent">
               <Avatar size={32} />
