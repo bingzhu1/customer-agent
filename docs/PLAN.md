@@ -19,6 +19,16 @@ authorization violation 7 → 0，越权 / 超期 / 食品 / 定制退款被确�
 | 60–120 分 | [x] `agents/v1_tools.py` 实现 `AgentUnderTest`，`make eval AGENT=v1` —— V1 19/54，硬门槛全绿，authorization violation = 0 | [ ] 交付模板；待命修 bug | [x] 合 P3 到 main `d31d9a7`；[ ] 跑 V1 eval，把授权用例修到 0 违规 |
 | 120–180 分 | [ ] `policy_gate` / `decide` 节点接 P3 的 `evaluate` / `decide`，`agents/v3_policy.py`，`make eval AGENT=v3` | [ ] 待命 | [ ] 跑 V3 eval；[ ] README 写 V0→V3 演进表；[ ] 合 P1 到 main，tag `v0.4-sprint` |
 
+
+### 冲刺第二轮（2026-09-05 晚，用户加范围）：记忆 + 更多工具 + 真 RAG 接线 + 前端
+
+| 谁 | 做什么 | 状态 |
+|---|---|---|
+| P1 | ① 收掉 V3（`agents/v3_policy.py`）；② `POST /v1/threads`、`POST /v1/threads/{id}/messages`（非流式，§8.2 响应体）、`GET /v1/threads/{id}`、dev-only `POST /v1/dev/token`；③ `search_policy` 换成 `rag.retriever.PolicyRetriever`；④ 新工具 `get_refunds` / `get_payments` / `get_profile`（会员等级、积分），签名无身份字段；⑤ ingest / persist 节点接 P2 的 CaseFacts 与 user_memory | [ ] |
+| P2 | Phase 5 记忆：`memory/case_facts.py`（PRD §10.2 强类型，只由确定性代码从工具结果 / verdict 填充）、`memory/user_memory.py`（写入带置信度 / 来源 / TTL / 版本，向量检索，软删除）、`memory/extract.py`（Haiku 抽取偏好与反复主题，同步版先行）、`memory/inject.py`（注入 prompt 时标"非权威提示"）、投毒测试（写入"该用户可无限退款"后 evaluate / decide 输出零变化） | [ ] |
+| FE（新 session） | `frontend/`：Vite + React + TS 聊天页，先对 mock，后接真实 API；展示 decision / reason_code / citations 徽标、REQUIRE_CONFIRMATION 的确认按钮、转人工提示 | [ ] |
+| master | 合并；`protocol.TurnResult` 加 `retrieved` 与 `memory_hints`；`agents/v5_memory.py` 跑 memory 类 eval；V0→V1→V3→V5 四行表进 README | [ ] |
+
 **冲刺期间明确推后**（不删，回到各 Phase 的正常节奏再做）：RAG 与向量检索（`search_policy` 用策略 `human_text` 关键词匹配代替，标注"非真 RAG"）、
 写路径与幂等（停在 REQUIRE_CONFIRMATION，不执行）、Postgres checkpointer、SSE、Langfuse、限流 / 超时中间件、
 prompt caching、记忆压缩与三方对比、人工控制台、混沌测试。
