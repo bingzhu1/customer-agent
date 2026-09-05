@@ -93,6 +93,7 @@
   SEC-010（两轮回复模板一致）与 IDEM-002（并发中恰好一次 replay）需要 runner 跨轮特判，notes 里有说明。
 - RAG-007/008 的低置信引用断言用 `citations_must_not_be_empty`，Phase 2 标定 τ 后再复核具体 id。
 - seed 每次全量清空 biz 7 表再重灌；biz 完全由 seed 拥有，不要手工往里插数据。
+- **同一版本两次 eval 结果可能不同**（V1：19/54 vs 17/54）。安全类指标不接受随机：任何依赖 LLM 结构化输出才能触发的拒绝（如冒充身份）都必须有不依赖 LLM 的确定性兜底。非 ANSWER 终态的回复必须逐字用 decision/templates，LLM 不得改写。
 - Phase 1 的 API 测试从 `.env` 读 `JWT_SECRET`，本地 `.env` 缺它会报 `HMAC key must not be empty`；已从 `.env.example` 补齐。测试不该依赖 `.env`，记入 PLAN 待补。
 - 迁移往返测试用一次性库 `cs_agent_test_<仓库路径哈希>`，每次先 DROP 再 CREATE；不同 worktree 迁移 head 不同，**绝不能共用同名测试库**（踩过：Phase 1 把共用库升到 0002，main 找不到该版本）。
 - runner 的副作用判定只看探针快照（biz.refunds / tickets 计数），被测方自述的 reason_code 不作为写库证据。
