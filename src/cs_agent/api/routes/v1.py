@@ -13,10 +13,23 @@ from uuid import UUID
 
 from fastapi import APIRouter, Request, Response, status
 
+from cs_agent.actions import (
+    ActionExpiredError as ServiceActionExpired,
+)
+from cs_agent.actions import (
+    ActionNotFoundError,
+    ActionStateError,
+)
 from cs_agent.api.deps import AuthDep, SessionDep
-from cs_agent.api.errors import NotFoundError
+from cs_agent.api.errors import (
+    ActionExpiredError,
+    ActionStateConflictError,
+    NotFoundError,
+)
 from cs_agent.api.schemas import (
     CitationOut,
+    ConfirmActionRequest,
+    ConfirmActionResponse,
     CreateThreadResponse,
     DevTokenRequest,
     DevTokenResponse,
@@ -30,6 +43,7 @@ from cs_agent.api.schemas import (
 )
 from cs_agent.auth.context import Role
 from cs_agent.auth.jwt import issue_token
+from cs_agent.domain.enums import ReasonCode
 from cs_agent.eval.pricing import estimate_cost_usd
 from cs_agent.services.chat import ChatService, TurnOutcome
 from cs_agent.settings import get_settings
@@ -87,6 +101,53 @@ def get_thread(thread_id: UUID, auth: AuthDep, session: SessionDep) -> ThreadDet
     )
 
 
+@router.post("/actions/{action_id}/confirm", tags=["actions"])
+def confirm_action(
+    action_id: int,
+    payload: ConfirmActionRequest,
+    auth: AuthDep,
+    session: SessionDep,
+    request: Request,
+) -> ConfirmActionResponse:
+    """FR-602/503：用户确认后幂等执行；`confirm=false` 则放弃该动作。
+
+    三种失败对外的口径（PRD §8.4）：
+    - 动作不存在**或**不属于当前用户 → 404，信封完全一致，不泄露存在性（FR-505）；
+    - 已过 `expires_at` → 410；
+    - 状态不接受确认（已驳回 / 已过期）→ 409。
+
+    重复确认不是错误：第二次返回 `replay=true` 与上一次相同的结果，绝不退第二笔。
+    """
+    service = ChatService(session, auth)
+    request_id = getattr(request.state, "request_id", None)
+    try:
+        if not payload.confirm:
+            service.reject_action(action_id, payload.note)
+            return ConfirmActionResponse(
+                action_id=action_id,
+                status="rejected",
+                reason_code=ReasonCode.OK,
+                replay=False,
+                request_id=request_id,
+            )
+        outcome = service.confirm_action(action_id)
+    except ActionNotFoundError as exc:
+        raise NotFoundError("资源不存在") from exc
+    except ServiceActionExpired as exc:
+        raise ActionExpiredError() from exc
+    except ActionStateError as exc:
+        raise ActionStateConflictError() from exc
+
+    return ConfirmActionResponse(
+        action_id=outcome.action.id,
+        status=outcome.action.status.value,
+        reason_code=outcome.reason_code,
+        replay=outcome.replay,
+        result=dict(outcome.action.result) if outcome.action.result else None,
+        request_id=request_id,
+    )
+
+
 def _to_message_response(outcome: TurnOutcome, request_id: str | None) -> MessageResponse:
     settings = get_settings()
     return MessageResponse(
@@ -115,17 +176,25 @@ def _to_message_response(outcome: TurnOutcome, request_id: str | None) -> Messag
 
 
 def _to_pending_action(outcome: TurnOutcome) -> PendingActionOut | None:
-    """action_id / confirm_url / expires_at 留空：Phase 4 落 agent_actions 后才有真值。"""
+    """动作已落 `agent_actions`，回带真实的 action_id、确认地址与过期时间。
+
+    落库失败或缺订单事实时三者为 null，前端据此把按钮置灰——绝不编造 action_id。
+    """
     draft = outcome.pending_action
     if draft is None:
         return None
     return PendingActionOut(
+        action_id=str(draft.action_id) if draft.action_id is not None else None,
         type=draft.type,
         summary=PendingActionSummary(
             order_id=draft.order_id, amount=draft.amount, currency=draft.currency
         ),
         policy_id=draft.policy_id,
         policy_version=draft.policy_version,
+        confirm_url=(
+            f"/v1/actions/{draft.action_id}/confirm" if draft.action_id is not None else None
+        ),
+        expires_at=draft.expires_at,
     )
 
 

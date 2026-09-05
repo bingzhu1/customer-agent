@@ -12,13 +12,21 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from decimal import Decimal
 from pathlib import Path
 from typing import Any, cast
 from uuid import UUID
 
 from sqlalchemy.orm import Session
 
+from cs_agent.actions import (
+    ActionProposal,
+    ActionService,
+    ActionType,
+    ExecutionOutcome,
+)
 from cs_agent.auth.context import AuthContext
+from cs_agent.db.base import get_session_factory
 from cs_agent.db.models.agent import Message, Thread
 from cs_agent.domain.enums import DecisionOutcome, ReasonCode
 from cs_agent.eval.protocol import Citation, Usage
@@ -79,6 +87,9 @@ class PendingActionDraft:
     currency: str | None
     policy_id: str | None
     policy_version: int | None
+    #: `agent_actions` 的主键。落库失败就不该有值——前端按它是否为空决定按钮能不能点
+    action_id: int | None = None
+    expires_at: datetime | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -160,6 +171,11 @@ class ChatService:
         decision = state["decision"]
         reply = state.get("reply") or ""
 
+        # 先把待确认动作落库，再提交对话。顺序是有意的：
+        # 记不下动作就不能对用户说"请确认"——那是一句兑现不了的承诺，宁可整轮失败。
+        # 反过来（先提交对话再 propose）会让用户看到确认卡片却点不动。
+        pending = self._propose_pending_action(state, thread_id, now)
+
         self._threads.add_message(thread_id, role=ROLE_ASSISTANT, content=reply, now=now)
         # 用户消息、助手回复、last_active_at 在同一个事务里
         self._session.commit()
@@ -175,10 +191,75 @@ class ChatService:
             citations=list(state.get("citations") or []),
             tools_used=[call.name for call in state.get("tool_calls") or []],
             handoff_offer=HANDOFF_TEXT if decision.outcome in HANDOFF_OUTCOMES else None,
-            pending_action=_pending_action(state),
+            pending_action=pending,
             usage=state.get("usage") or Usage(),
             latency_ms=round((time.perf_counter() - started) * 1000, 2),
         )
+
+    # --- 写路径（PRD §5.3）-----------------------------------------------------
+
+    def _propose_pending_action(
+        self, state: AgentState, thread_id: UUID, now: datetime
+    ) -> PendingActionDraft | None:
+        """决策为 REQUIRE_CONFIRMATION 时把动作落 `agent_actions`，把真实 `action_id` 带出去。
+
+        金额、订单号一律取自业务库查回来的订单，**不取用户说法**；
+        `reason` 用机器可读的 reason_code 而不是用户原话——原话一改，幂等键就跟着变，
+        同一笔退款会被算成两笔。
+        """
+        decision = state["decision"]
+        if decision.outcome is not DecisionOutcome.REQUIRE_CONFIRMATION:
+            return None
+        order = state.get("order") or {}
+        verdict = state.get("verdict")
+        order_id = order.get("order_id")
+        amount = order.get("total_amount")
+        if order_id is None or amount is None:
+            # 没有订单事实就没有可执行的动作，只给用户看摘要，按钮置灰
+            return None
+
+        proposal = ActionProposal(
+            ActionType.REFUND,
+            {
+                "order_id": int(order_id),
+                "amount": Decimal(str(amount)),
+                "reason": decision.reason_code.value,
+            },
+        )
+        record = self._actions().propose(
+            self._ctx,
+            thread_id,
+            proposal,
+            outcome=decision.outcome,
+            verdict=verdict,
+            window_start=refund_window(now),
+        )
+        return PendingActionDraft(
+            type=ActionType.REFUND.value,
+            order_id=int(order_id),
+            amount=str(amount),
+            currency=order.get("currency"),
+            policy_id=verdict.policy_id if verdict is not None else None,
+            policy_version=verdict.policy_version if verdict is not None else None,
+            action_id=record.id,
+            expires_at=record.expires_at,
+        )
+
+    def confirm_action(self, action_id: int) -> ExecutionOutcome:
+        """用户点确认（PRD §5.3 第二段流）。归属、过期、状态三道校验都在 ActionService 里。
+
+        异常原样往上抛，由路由翻成 404 / 410 / 409——这一层不认识 HTTP 状态码。
+        """
+        return self._actions().confirm(action_id, self._ctx)
+
+    def reject_action(self, action_id: int, note: str | None = None) -> None:
+        """用户放弃这次写操作。动作进终态，不产生任何副作用。"""
+        self._actions().reject(action_id, self._ctx, note=note)
+
+    def _actions(self) -> ActionService:
+        """写路径用**独立的 session 工厂**：动作与审计有自己的事务边界，
+        不跟着一轮对话的读写一起回滚。"""
+        return ActionService(get_session_factory())
 
     def _extraction_queue(self) -> ExtractionQueue | None:
         """进程级异步抽取队列。生产路径**绝不调 drain()**——那等于把抽取拖回热路径。"""
@@ -234,21 +315,13 @@ class ChatService:
         return self._llm
 
 
-def _pending_action(state: AgentState) -> PendingActionDraft | None:
-    """只有 REQUIRE_CONFIRMATION 才有待确认动作。金额取自订单，不取自用户说法。"""
-    decision = state["decision"]
-    if decision.outcome is not DecisionOutcome.REQUIRE_CONFIRMATION:
-        return None
-    order = state.get("order") or {}
-    verdict = state.get("verdict")
-    return PendingActionDraft(
-        type="refund",
-        order_id=order.get("order_id"),
-        amount=order.get("total_amount"),
-        currency=order.get("currency"),
-        policy_id=verdict.policy_id if verdict is not None else None,
-        policy_version=verdict.policy_version if verdict is not None else None,
-    )
+def refund_window(now: datetime) -> datetime:
+    """幂等键的时间窗口：整点截断。
+
+    同一用户、同一订单、同一金额，一小时之内反复说"我要退款"算同一笔动作，
+    回到同一个 `action_id`，而不是在队列里堆出一串待确认的重复退款。
+    """
+    return now.replace(minute=0, second=0, microsecond=0)
 
 
 def close_extraction_queue() -> None:

@@ -237,9 +237,10 @@ def test_pending_action_shape_on_require_confirmation(client: TestClient) -> Non
     assert action["type"] == "refund"
     assert action["summary"] == {"order_id": 82913, "amount": "89.00", "currency": "CNY"}
     assert action["policy_id"] == "REFUND-STD-001"
-    # 写路径未开：绝不编造 action_id / confirm_url，否则"确认"会指向不存在的动作
-    assert action["action_id"] is None
-    assert action["confirm_url"] is None
+    # 写路径已开（P3 接 ActionService）：action_id 落库后才有真值，confirm_url 由它拼出
+    assert action["action_id"] is not None
+    assert action["confirm_url"] == f"/v1/actions/{action['action_id']}/confirm"
+    assert action["expires_at"] is not None
 
 
 def test_no_pending_action_when_denied(client: TestClient) -> None:
