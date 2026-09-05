@@ -86,6 +86,8 @@
 
 ## 已知坑
 
+- **2026-09-05 演示前发现**：订单 82913 被跨会话退了两次（agent_actions 166/168 均 succeeded，biz.refunds 9002/9003），幂等键按会话/窗口算绕过了同订单重复退款，`PolicyFacts.prior_refunds` 也未拦；τ_high=0.50 使同意图不同措辞可能落进低置信带转人工。两条都记在 `docs/demo/演示脚本.md` §5，待 Phase 4 / Phase 2 收尾时处理。
+
 - **本机 3000 端口被用户另一个项目占用**（`~/Desktop/bingzhu's file/spam` 的 tsx watch 服务），
   因此 Langfuse 宿主端口通过 `LANGFUSE_PORT` 参数化，本机用 3001。不要杀那个进程。
 - Homebrew 的 `docker-compose` 不会自动注册为 `docker compose` 子命令，需
