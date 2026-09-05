@@ -9,29 +9,24 @@
 
 ## 当前状态
 
-- **Phase**：Phase 0 进行中 —— milestone 1、2 已验收；milestone 3（eval runner）已完成，等用户验收
+- **Phase**：**Phase 0 完成**，PR `phase0-eval-foundation → main` 待用户合入；合入后打 tag `v0.1-phase0`
 - **分支**：`phase0-eval-foundation`（从 `main` 切出，尚未开 PR）
 - **最新 commit**：见 `git log -1`
 - **仓库**：https://github.com/bingzhu1/customer-agent （public）
 - **模型**：本 session 为 Fable 5.1，上一 session 的模型切换问题已不存在
 
-## 本 milestone（3）产物：eval runner
+## Phase 0 收官产物
 
-- `src/cs_agent/eval/`：`protocol.py`（被测接口）· `assertions.py`（Expect → Check）· `side_effects.py`（查库探针）·
-  `runner.py`（多轮驱动 + 跨轮特判）· `metrics.py`（PRD §12.4）· `report.py`（markdown + JSON）·
-  `store.py`（eval_runs / eval_results）· `judge.py`（Haiku 评判语气 / groundedness，`--judge` 开启）·
-  `dummy.py`（哑 agent）· `registry.py`（`--agent` 名 → 实例，v0 惰性导入 `cs_agent.agents.v0_naive`）· `__main__.py`
-- `make eval AGENT=dummy|v0 EVAL_ARGS="--judge --filter SEC --no-db --strict"`
-- 报表：`eval_reports/<时间戳>_<agent>.md` + `latest_<agent>.md`；JSON 同名（.gitignore 忽略）
-- 基线：哑 agent 1/54，硬门槛 FAIL —— 用作 runner 的反向校验
+- eval runner（milestone 3）+ V0 naive baseline（session 2 交付，已合入）
+- V0 实测：1/54，硬门槛 FAIL，tokens/session 2782，$0.011/session；报表 `eval_reports/latest_v0-naive.md`，
+  分析 `docs/eval/v0-baseline.md`（五类典型错误 + 记忆指标的反直觉说明）
+- 首次跑有 5 条 APIConnectionError，已删报表重跑，第二次 54 条零异常（eval_run_id 4）
 
 ## 下一步要做什么
 
-1. 用户验收 milestone 3
-2. 合并 session 2 的 `phase0-v0-baseline`（V0 naive）到 `phase0-eval-foundation`，跑 `make eval AGENT=v0`，
-   报表进版本库；对照 PRD §12.6 V0 行写"裸 LLM 错在哪"小结 → Phase 0 收官，开 PR 合 `main`，打 tag `v0.1-phase0`
-3. session 3 的 `phase1-skeleton` 在 Phase 0 合入后 rebase 到 main
-4. Phase 0 的 DoD 见 PRD §15
+1. 用户合 PR → master 拉 main 打 tag `v0.1-phase0` → 通知 Phase 1 / Phase 3 各做 `git rebase main`
+2. master 职责转为：审各 session 交付、合并、跑 `make test` + `make eval` 看回归；V1 落地后 `make eval AGENT=v1` 对照 V0
+3. Phase 3（策略引擎 + 决策层）交付后审 `PolicyFacts` / `DecisionInput` 接口并定稿，供 Phase 1 接线
 
 ## 并行分工（2026-09-05 起，Phase 0 例外放开）
 
@@ -41,7 +36,8 @@
 | session | 分支 / 目录 | 只能动的文件 | 数据库 |
 |---|---|---|---|
 | master（本 session） | `phase0-eval-foundation` / 主目录 | `src/cs_agent/eval/**`（protocol 除外，改动需声明）、`tests/test_eval_*`、Makefile 的 eval target、`eval_reports/`、PROGRESS / HANDOFF | `cs_agent` |
-| session 2：V0 baseline | `phase0-v0-baseline` / `../ca-v0` | `src/cs_agent/agents/__init__.py`、`agents/v0_naive.py`、`tests/test_v0_naive.py` | `cs_agent`（只读，不跑 seed） |
+| session 2：V0 baseline | `phase0-v0-baseline` / `../ca-v0` | **已交付并合入**，session 可关闭 | — |
+| session 4：Phase 3 | `phase3-policy-engine` / `../ca-phase3` | `policy/facts.py`、`policy/engine.py`、`decision/**`、对应 tests（纯函数，无 IO / LLM）；只读 `policy/schema.py` | `cs_agent_p3` |
 | session 3：Phase 1 | `phase1-skeleton` / `../ca-phase1` | Phase 1 全部范围（用户已在该 session 内验收 2 个 milestone：0002 迁移 + AuthContext + Repository；FastAPI / JWT / 可观测性，新依赖 fastapi / uvicorn / pyjwt / prometheus-client / httpx 已获用户同意）。共享文件改动：settings.py 加 jwt_*；test_migrations 合并时以 master 的一次性库版为准 | `cs_agent_p1` |
 
 合并顺序（用户 2026-09-05 拍板）：**等 V0 交付后**一并合——V0 → phase0-eval-foundation → main（tag `v0.1-phase0`）→ phase1-skeleton rebase 到 main。
