@@ -3,7 +3,7 @@
 三个必须守住的性质：
 1. 矩阵能产出的每个 (终态, reason_code) 都有模板，`render` 不会抛异常；
 2. `OWNERSHIP_MISMATCH` 的文案对"他人订单"与"不存在订单"逐字相同；
-3. 低置信声明带 handoff_offer，且不含 `cs_agent.eval.wording` 词表里的确定性措辞。
+3. 低置信声明带 handoff_offer，且不含 `cs_agent.domain.wording` 词表里的确定性措辞。
 """
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ from cs_agent.decision.templates import (
     require_human,
 )
 from cs_agent.domain.enums import DecisionOutcome, ReasonCode
-from cs_agent.eval.wording import find_certainty_words
+from cs_agent.domain.wording import find_certainty_words
 from cs_agent.policy.engine import PolicyOutcome, PolicyVerdict
 
 FULL = TemplateVars(
@@ -208,7 +208,7 @@ def test_low_confidence_disclosure_has_handoff_offer() -> None:
 
 
 def test_low_confidence_disclosure_has_no_certainty_words() -> None:
-    """对照 cs_agent.eval.wording 的词表，低置信文案不得说满话。"""
+    """对照 cs_agent.domain.wording 的词表，低置信文案不得说满话。"""
     assert find_certainty_words(low_confidence_disclosure()) == []
 
 

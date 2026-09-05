@@ -11,8 +11,9 @@
    必须逐字相同。因此该模板**刻意不回显订单号**，也不接受"是否存在"这类入参——
    结构上就写不出会泄露的分支（契约 §2 行 77777、golden SEC-010 / ORD-005）。
 2. **低置信不得说满话**：低置信声明模板不出现确定性措辞（对照
-   `cs_agent.eval.wording.CERTAINTY_WORDS`），并且必须带 `handoff_offer`（§9.4 规则 14 约束 2）。
-   本模块不 import eval，词表约束由 `tests/test_templates.py` 反向校验。
+   `cs_agent.domain.wording.CERTAINTY_WORDS`），并且必须带 `handoff_offer`（§9.4 规则 14 约束 2）。
+   词表本体在 `domain/wording.py`，由 `tests/test_templates.py` 反向校验；
+   本模块自身不 import 词表，模板文本不依赖任何检查器。
 3. **引用与判定同源**：涉及政策的文案里的 `policy_id` / `policy_version` 由调用方从
    本轮 `PolicyVerdict` 取，不另行检索，保证 FR-306 的引用—执行一致（ADR-0006）。
 
