@@ -6,14 +6,16 @@
 
 他人数据与不存在的 id 一律返回 `None`（FR-804），调用方无从区分。
 
-`search_policy` 是**占位实现，不是真 RAG**：用策略 YAML 的 `title / human_text / faq`
-做关键词打分，返回 `policy_id / policy_version / anchor`。Phase 2 换成 pgvector 检索后，
-返回结构不变，只换打分来源。因此这里的 `score` 不是相似度，别拿它当 τ 门控的输入。
+`search_policy` 现在走**真检索**：`rag.retriever.PolicyRetriever` 查 `agent.policy_chunks`
+的 pgvector 向量，返回 `policy_id / policy_version / anchor / content / score`，
+`score` 是真实相似度，可以直接喂给决策矩阵的 τ 门控（规则 10.5 / 13 / 14）。
+
+语料由 `python -m cs_agent.rag.ingest` 从策略 YAML 生成；检索器与灌库必须用**同一个**
+embedding provider，否则向量空间对不上，分数没有意义。
 """
 
 from __future__ import annotations
 
-import re
 import time
 from dataclasses import dataclass, field
 from typing import Any
@@ -21,22 +23,11 @@ from typing import Any
 from cs_agent.eval.protocol import ToolCall
 from cs_agent.graph.untrusted import wrap_untrusted
 from cs_agent.policy.schema import PolicySet
+from cs_agent.rag.retriever import PolicyRetriever, RetrievalResult
 from cs_agent.repositories.biz import BizRepository
 
 #: 单轮工具调用次数上限（FR-210）。超过即由决策层给 TOOL_BUDGET_EXCEEDED。
 TOOL_BUDGET_PER_TURN = 3
-
-_CJK = r"一-鿿"
-_TOKEN_RE = re.compile(rf"[a-zA-Z0-9]+|[{_CJK}]")
-
-
-def _keywords(text: str) -> list[str]:
-    """英文按词、中文按二元组切分。朴素但确定，够占位用。"""
-    chars = _TOKEN_RE.findall(text)
-    words = [c for c in chars if not re.match(rf"[{_CJK}]", c)]
-    cjk = [c for c in chars if re.match(rf"[{_CJK}]", c)]
-    bigrams = ["".join(pair) for pair in zip(cjk, cjk[1:], strict=False)]
-    return [w.lower() for w in words] + bigrams
 
 
 @dataclass
@@ -45,7 +36,10 @@ class ToolBelt:
 
     repo: BizRepository
     policies: PolicySet
+    retriever: PolicyRetriever
     calls: list[ToolCall] = field(default_factory=list)
+    #: 本轮最后一次检索的完整结果，供 `act` 节点取 max_score / band 喂给决策矩阵。
+    last_retrieval: RetrievalResult | None = None
 
     # --- 只读工具 -------------------------------------------------------------
 
@@ -116,37 +110,25 @@ class ToolBelt:
                 "resolved_at": ticket.resolved_at.isoformat() if ticket.resolved_at else None,
             }
 
-    def search_policy(self, query: str, *, top_k: int = 3) -> list[dict[str, Any]]:
-        """政策检索（FR-204 的占位实现）。返回带 policy_id / version / anchor 的条目。"""
+    def search_policy(self, query: str, *, top_k: int | None = None) -> list[dict[str, Any]]:
+        """政策检索（FR-204）。向量检索 top-k，返回带 policy_id / version / anchor 的 chunk。
+
+        分数是真实相似度：`act` 会把 `max_score` 交给决策矩阵做 τ 门控，
+        低置信时不允许走到"请用户确认"，无结果时不允许编造（规则 10.5 / 13 / 14）。
+        """
         with self._record("search_policy", {"query": query}):
-            wanted = set(_keywords(query))
-            if not wanted:
-                return []
-            scored: list[tuple[float, dict[str, Any]]] = []
-            for rule in self.policies.rules:
-                haystack = " ".join(
-                    [rule.title, rule.human_text]
-                    + [f"{f.q} {f.a}" for f in rule.faq]
-                    + [rule.domain.value]
-                )
-                hits = wanted & set(_keywords(haystack))
-                if not hits:
-                    continue
-                scored.append(
-                    (
-                        len(hits) / len(wanted),
-                        {
-                            "policy_id": rule.id,
-                            "policy_version": rule.version,
-                            "anchor": rule.anchor,
-                            "title": rule.title,
-                            "content": rule.human_text,
-                            "score": round(len(hits) / len(wanted), 4),
-                        },
-                    )
-                )
-            scored.sort(key=lambda pair: (-pair[0], pair[1]["policy_id"]))
-            return [item for _, item in scored[:top_k]]
+            result = self.retriever.search(query, top_k=top_k)
+            self.last_retrieval = result
+            return [
+                {
+                    "policy_id": c.policy_id,
+                    "policy_version": c.policy_version,
+                    "anchor": c.anchor,
+                    "content": c.content,
+                    "score": round(c.score, 4),
+                }
+                for c in result.chunks
+            ]
 
     # --- 调用记录 -------------------------------------------------------------
 

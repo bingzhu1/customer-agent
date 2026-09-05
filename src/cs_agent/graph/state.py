@@ -29,6 +29,10 @@ class AgentState(TypedDict, total=False):
     shipping: dict[str, Any] | None
     ticket: dict[str, Any] | None
     policy_hits: list[dict[str, Any]]
+    #: 本轮检索的最高相似度与分带；未检索时为 None（决策矩阵据此跳过 τ 门控）
+    retrieval_max_score: float | None
+    retrieval_band: str | None
+    has_citable_chunk: bool
     tool_calls: list[ToolCall]
     #: 请求的实体存在且属于当前用户；查不到（他人或不存在）即为 False
     ownership_ok: bool

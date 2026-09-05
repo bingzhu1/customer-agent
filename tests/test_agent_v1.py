@@ -11,6 +11,8 @@ from cs_agent.domain.enums import DecisionOutcome, ReasonCode
 from cs_agent.eval.protocol import AgentUnderTest, Usage
 from cs_agent.eval.schema import Auth
 from cs_agent.graph.llm import Understanding
+from cs_agent.rag.embeddings import FakeEmbeddings
+from cs_agent.rag.ingest import ingest_policies
 from cs_agent.seed.biz_seed import run_seed
 from cs_agent.seed.reference import EVAL_NOW
 from cs_agent.settings import get_settings
@@ -51,6 +53,7 @@ def seeded() -> None:
     except OperationalError as exc:  # pragma: no cover - 取决于本机环境
         pytest.skip(f"数据库不可达，跳过数据库测试：{exc.__class__.__name__}")
     run_seed(engine)
+    ingest_policies(provider=FakeEmbeddings(), engine=engine)
 
 
 @pytest.fixture

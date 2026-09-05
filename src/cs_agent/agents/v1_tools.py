@@ -34,6 +34,8 @@ from cs_agent.graph.nodes import Deps
 from cs_agent.graph.state import AgentState
 from cs_agent.graph.tools import ToolBelt
 from cs_agent.policy.schema import PolicySet, load_policies
+from cs_agent.rag.provider import default_retriever
+from cs_agent.rag.retriever import PolicyRetriever
 from cs_agent.repositories.biz import BizRepository
 from cs_agent.settings import get_settings
 
@@ -60,12 +62,13 @@ class GraphSession(AgentSession):
         auth: AuthContext,
         now: datetime,
         policies: PolicySet,
+        retriever: PolicyRetriever,
         llm: Llm | FallbackLlm,
         enable_policy_gate: bool,
         thread_id: str,
     ) -> None:
         self._db = db
-        self._belt = ToolBelt(repo=BizRepository(db, auth), policies=policies)
+        self._belt = ToolBelt(repo=BizRepository(db, auth), policies=policies, retriever=retriever)
         self._deps = Deps(
             llm=llm,
             tools=self._belt,
@@ -156,9 +159,11 @@ class GraphAgent(AgentUnderTest):
         llm: Llm | FallbackLlm | None = None,
         *,
         policies: PolicySet | None = None,
+        retriever: PolicyRetriever | None = None,
     ) -> None:
         self._llm = llm
         self._policies = policies
+        self._retriever = retriever
         self._session_seq = 0
 
     def _ensure_llm(self) -> Llm | FallbackLlm:
@@ -173,6 +178,12 @@ class GraphAgent(AgentUnderTest):
             self._policies = _load_policies()
         return self._policies
 
+    def _ensure_retriever(self) -> PolicyRetriever:
+        """灌库与检索必须同一个 provider，选择逻辑统一在 `rag.provider`。"""
+        if self._retriever is None:
+            self._retriever = default_retriever()
+        return self._retriever
+
     def start_session(self, auth: Auth, *, now: datetime) -> AgentSession:
         """身份在这里注入一次，之后不再传递（红线 1）。"""
         self._session_seq += 1
@@ -182,6 +193,7 @@ class GraphAgent(AgentUnderTest):
             auth=ctx,
             now=now,
             policies=self._ensure_policies(),
+            retriever=self._ensure_retriever(),
             llm=self._ensure_llm(),
             enable_policy_gate=self.enable_policy_gate,
             thread_id=f"{self.name}-{self._session_seq}",

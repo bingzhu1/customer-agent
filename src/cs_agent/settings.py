@@ -17,6 +17,10 @@ class Settings(BaseSettings):
 
     # Embedding / RAG（PRD §11、§13.4；Anthropic 不提供 embedding，向量化走独立 provider）
     openai_api_key: str = Field(default="", repr=False)
+    #: 向量化 provider：`fake`（确定性哈希，不触网）或 `openai`。
+    #: **显式配置**，不看环境里碰巧有没有 OPENAI_API_KEY——灌库与检索必须用同一个
+    #: provider，靠"有没有 key"隐式决定会导致向量空间悄悄对不上（分数掉到 0.05 那种）。
+    embedding_provider: str = "fake"
     embedding_model: str = "text-embedding-3-small"
     embedding_dimensions: int = 1536  # 与 policy_chunks / memory_embeddings 的 vector(1536) 一致
     rag_top_k: int = 8

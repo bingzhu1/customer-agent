@@ -12,6 +12,8 @@ from sqlalchemy.exc import OperationalError
 from cs_agent.api.main import create_app
 from cs_agent.eval.protocol import Usage
 from cs_agent.graph.llm import Understanding
+from cs_agent.rag.embeddings import FakeEmbeddings
+from cs_agent.rag.ingest import ingest_policies
 from cs_agent.seed.biz_seed import run_seed
 from cs_agent.services import chat as chat_service
 from cs_agent.settings import get_settings
@@ -48,6 +50,7 @@ def client() -> Iterator[TestClient]:
     except OperationalError as exc:  # pragma: no cover - 取决于本机环境
         pytest.skip(f"数据库不可达，跳过数据库测试：{exc.__class__.__name__}")
     run_seed(engine)
+    ingest_policies(provider=FakeEmbeddings(), engine=engine)
 
     original = chat_service.ChatService._ensure_llm
     chat_service.ChatService._ensure_llm = lambda self: StubLlm()  # type: ignore[assignment,method-assign,return-value]
