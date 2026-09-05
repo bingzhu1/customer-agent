@@ -57,7 +57,7 @@ _SELECT_COLUMNS = (
 )
 
 _FIND = text(
-    f"SELECT {_SELECT_COLUMNS} FROM agent.user_memory m "
+    f"SELECT {_SELECT_COLUMNS}, m.deleted_at FROM agent.user_memory m "
     "WHERE m.user_id = :user_id AND m.mem_key = :mem_key"
 )
 
@@ -80,7 +80,8 @@ _UPDATE = text(
         source_thread_id = :source_thread_id,
         ttl_at = :ttl_at,
         version = version + 1,
-        updated_at = :now
+        updated_at = :now,
+        deleted_at = CASE WHEN :revive THEN NULL ELSE deleted_at END
     WHERE id = :id
     RETURNING id, version
     """
@@ -186,6 +187,12 @@ class UserMemoryRepo:
         """写入或覆盖一条记忆；同 key 覆盖并 `version + 1`（FR-710）。
 
         向量与记忆在同一个事务里更新：不允许出现"值变了但向量还是旧的"的中间态。
+
+        **软删过的 key 怎么办**：只有证据时间 `now` 严格晚于 `deleted_at` 才复活
+        （清掉 `deleted_at`）。
+        删除是用户意愿，删除之前那轮对话迟到的抽取结果不能把它悄悄救回来；
+        但用户在删除之后**又说了一遍**"以后用英文"，那是新的意愿，不复活就等于这个 key 永远学不回来
+        （踩过：清空记忆后再说"以后用英文回答"，行被原地更新但 `deleted_at` 仍在，检索永远看不到）。
         """
         if not 0.0 <= confidence <= 1.0:
             raise ValueError(f"confidence 必须在 [0,1]，收到 {confidence}")
@@ -211,7 +218,13 @@ class UserMemoryRepo:
                     .one()
                 )
             else:
-                written = conn.execute(_UPDATE, {**params, "id": existing["id"]}).mappings().one()
+                deleted_at = existing["deleted_at"]
+                revive = deleted_at is not None and moment > deleted_at
+                written = (
+                    conn.execute(_UPDATE, {**params, "id": existing["id"], "revive": revive})
+                    .mappings()
+                    .one()
+                )
             self._write_embedding(conn, int(written["id"]), vector)
             row = conn.execute(_FIND, {"user_id": user_id, "mem_key": mem_key}).mappings().one()
             return _record(row)

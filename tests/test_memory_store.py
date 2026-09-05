@@ -384,3 +384,15 @@ def test_search_always_injects_language_preference(repo: UserMemoryRepo, user: i
     assert "language_preference" not in [
         m.mem_key for m in repo.search(user, "物流催单相关", top_k=2, now=NOW, pinned_keys=())
     ]
+
+
+def test_upsert_after_deletion_revives_the_key(repo: UserMemoryRepo, user: int) -> None:
+    """删除之后用户再次表达同一偏好，是新的意愿，必须能学回来（否则该 key 永远死掉）。"""
+    from datetime import timedelta
+
+    repo.upsert(user, "language_preference", "希望客服用英文沟通", confidence=0.9, now=NOW)
+    repo.delete(user, "language_preference", now=NOW)
+    later = NOW + timedelta(seconds=30)
+    rec = repo.upsert(user, "language_preference", "希望客服用英文沟通", confidence=0.95, now=later)
+    assert rec.version == 2
+    assert "language_preference" in [m.mem_key for m in repo.search(user, "语言", now=later)]
