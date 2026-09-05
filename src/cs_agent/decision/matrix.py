@@ -1,7 +1,10 @@
 """决策层：PRD §9.4 的升级矩阵，确定性有序规则表（FR-404/405/406）。
 
-纯函数 `decide(DecisionInput) -> Decision`。16 条规则（含 10.5 与 14b 共 18 个分支）
+纯函数 `decide(DecisionInput) -> Decision`。16 条规则（含 6b、10.5、14b 共 19 个分支）
 **按序求值、首次命中即返回**，返回值回带命中的规则编号 `rule_no` 供审计与排障。
+
+规则 6b 是本实现相对 §9.4 原表的一处补充：`TOOL_BUDGET_EXCEEDED`（FR-210）原本没有
+对应行，图里靠事后钳位实现。钳位读不出"为什么"，也无法被矩阵测试覆盖，因此提为正式一行。
 
 设计约束：
 
@@ -40,6 +43,8 @@ class DecisionInput:
     high_negative_sentiment: bool = False
     #: 同一工具连续失败 ≥ 2 次。
     repeated_tool_failure: bool = False
+    #: 单轮工具调用次数超预算（FR-210）。超预算强制进人工，不允许比矩阵结论更宽松。
+    tool_budget_exceeded: bool = False
     dependency_unavailable: bool = False
     #: 策略引擎的判定结果；本轮不涉及策略判定时为 None。
     verdict: PolicyVerdict | None = None
@@ -94,6 +99,11 @@ def decide(inp: DecisionInput) -> Decision:
     # 6 同一工具连续失败 ≥ 2 次
     if inp.repeated_tool_failure:
         return Decision(DecisionOutcome.REQUIRE_HUMAN, ReasonCode.TOOL_FAILURE_REPEATED, "6")
+
+    # 6b 单轮工具预算耗尽（FR-210）。§9.4 原表没有这一行，补在 6 之后、7 之前：
+    #     它与规则 6 同属"系统侧已经尽力但没拿到结果"，都该在策略判定之前转人工。
+    if inp.tool_budget_exceeded:
+        return Decision(DecisionOutcome.REQUIRE_HUMAN, ReasonCode.TOOL_BUDGET_EXCEEDED, "6b")
 
     # 7 关键依赖不可用
     if inp.dependency_unavailable:
