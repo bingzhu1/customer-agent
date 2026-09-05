@@ -35,3 +35,4 @@
 | 2026-09-05 | 冲刺 | 合入 V3（25/54，硬门槛全绿，security 10/10，一致性 12/12）、Phase 5 记忆确定性部分、前端三段；README 增 V0→V1→V3 演进表；PRD v1.3 填 V1/V3 实测 | `dc40bc6` | test 554/554 |
 | 2026-09-05 | Phase 1 | 第二轮 ②：`POST /v1/threads`、`POST /v1/threads/{id}/messages`（§8.2 响应体）、`GET /v1/threads/{id}`、dev-only `POST /v1/dev/token`；新增 `repositories/agent.py`（会话按 user 收口）与 `services/chat.py`（事务边界）；顺手修掉 main 里 `latest_v1-tools.md` 残留的合并冲突标记 | `5c0400e` | test 564/564、lint 通过 |
 | 2026-09-05 | 冲刺 | 前端四段合入（登录 / 对话 / 六种 decision / 确认按钮 / 调试抽屉 / 历史，mock 优先，npm test 11、lint、build 全过，FE session 交付）；Phase 1 ② 四个聊天接口合入；Phase 4 内核任务下发 P3；PRD v1.4 矩阵加规则 6b | `4c3e547` | test 564/564 |
+| 2026-09-05 | 跨 Phase | 前端评估：现有前端够用、不重构；assistant-ui 仅参考、shadcn 不引入。发现会话侧栏无后端接口，PRD v1.5 加 `GET /v1/threads`（FR-109），PLAN Phase 4 M7 加依赖 | 见 git log | 文档改动 |

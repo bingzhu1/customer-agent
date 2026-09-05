@@ -20,6 +20,7 @@
 | v1.2 | 2026-09-05 | §12.6 V0 行填入实测值；分析见 `docs/eval/v0-baseline.md` |
 | v1.3 | 2026-09-05 | §12.6 V1 / V3 行填入实测值（V2 跳过：RAG 零件先于接线交付） |
 | v1.4 | 2026-09-05 | §9.4 增加规则 6b：TOOL_BUDGET_EXCEEDED 进矩阵（原为矩阵外钳位，Phase 3 提出） |
+| v1.5 | 2026-09-05 | §8.1 增加 `GET /v1/threads` 会话列表接口，§4 增加 FR-109（前端评估发现会话侧栏无接口可用，用户同意） |
 
 ---
 
@@ -135,6 +136,7 @@
 | FR-106 | 指标暴露 | P0 | `/metrics` 返回 Prometheus 文本格式 | 1 |
 | FR-107 | 优雅关闭 | P0 | 收到 SIGTERM 后不再接新请求，已有请求完成或超时后退出 | 6 |
 | FR-108 | API 版本前缀 | P0 | 所有业务接口位于 `/v1` 下 | 1 |
+| FR-109 | 列出本人会话 | P1 | `GET /v1/threads?limit=&cursor=` 仅返回本人会话，按最近活动倒序；每项含 `thread_id / created_at / last_message_at / last_decision / preview`（最近一条用户消息前 40 字）；不含他人会话，不暴露总数 | 4 |
 
 ### 4.2 数据查询工具（FR-2xx）
 
@@ -576,6 +578,7 @@ POST /v1/human-review/{review_id}
 | 方法 | 路径 | 说明 | 鉴权 |
 |---|---|---|---|
 | POST | `/v1/threads` | 创建会话 | customer |
+| GET | `/v1/threads` | 本人会话列表（分页，最近活动倒序，FR-109） | 本人 |
 | GET | `/v1/threads/{thread_id}` | 会话详情 + 消息 + CaseFacts 摘要 | 本人 |
 | POST | `/v1/threads/{thread_id}/messages` | 发送消息（非流式） | 本人 |
 | POST | `/v1/chat/stream` | 发送消息（SSE 流式） | 本人 |
