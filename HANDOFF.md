@@ -86,7 +86,7 @@
 
 ## 已知坑
 
-- **respond 提示词不带对话历史**，只有当前一句 + CaseFacts + 记忆提示。所以“以后用英文回答”要靠后台抽取（约 5–15 秒）落成 `language_preference` 才对下一轮生效；紧接着立刻发问仍是中文。这是设计现状不是 bug，要即时生效需在 respond 里带最近几轮（涉及注入面，需评审）。另：软删过的 key 由 `0b6c4dc` 起在用户再次表达后复活（证据时间需晚于 deleted_at）。
+- **respond 提示词不带对话历史**，只有当前一句 + CaseFacts + 记忆提示。回复语言由 `domain/language.py` 确定性算定：本轮明确要求（正则）→ 记忆 `language_preference` → 中文，写进 `state.reply_language`；模板分支自 `d6d5ee1` 起有英文骨架 `TEMPLATES_EN`，所以"以后用英文回答"当轮即生效、下一轮靠记忆（抽取约 5–15 秒落库）。英文模板不渲染中文 policy_summary。软删过的 key 由 `0b6c4dc` 起在用户再次表达后复活（证据时间需晚于 deleted_at）。
 
 - **记忆检索是纯 top 5 无阈值**（`288c2e1` 起 `language_preference` 固定注入）：记忆条数一多，与当前问句不相似的全局偏好会被挤出 top 5。以后再有"每轮都该生效"的 key，加进 `memory/user_memory.py` 的 `ALWAYS_INJECT_KEYS`，不要靠调 top_k。respond 提示词的语言顺序是：本轮要求 → 记忆 language_preference → 中文；非 ANSWER 终态仍逐字走模板，不受影响。
 
