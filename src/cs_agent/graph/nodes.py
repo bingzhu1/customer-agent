@@ -19,10 +19,11 @@ V3 有了 `verdict`，超期 / 食品 / 定制会被**确定性地**拒绝并引
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
 from typing import Any
+from uuid import UUID
 
 from cs_agent.auth.context import AuthContext
 from cs_agent.decision import templates
@@ -31,10 +32,15 @@ from cs_agent.decision.matrix import decide as run_matrix
 from cs_agent.domain.enums import DecisionOutcome, ItemCategory, ItemCondition, ReasonCode
 from cs_agent.eval.protocol import Citation, Usage
 from cs_agent.graph.llm import FallbackLlm, Llm, Understanding
+from cs_agent.graph.memory_store import CaseFactsStore, InMemoryCaseFactsStore
 from cs_agent.graph.state import AgentState
 from cs_agent.graph.tools import ToolBelt
 from cs_agent.graph.untrusted import detect_injection
-from cs_agent.memory.case_facts import CaseFacts
+from cs_agent.memory.case_facts import CaseFacts, apply_tool_result, apply_verdict
+from cs_agent.memory.extract import TranscriptTurn, extract_memories
+from cs_agent.memory.inject import render_hints
+from cs_agent.memory.user_memory import MemoryRecord, UserMemoryRepo
+from cs_agent.observability.logging import get_logger
 from cs_agent.policy.engine import PolicyVerdict, evaluate
 from cs_agent.policy.facts import PolicyFacts
 from cs_agent.policy.schema import PolicySet
@@ -42,6 +48,8 @@ from cs_agent.rag.rewrite import fallback_query
 
 #: 需要资格判定的意图。这些意图缺少 verdict 时矩阵会转人工，不会默认放行。
 ELIGIBILITY_INTENTS = frozenset({"refund_request"})
+
+logger = get_logger(__name__)
 
 
 @dataclass
@@ -56,6 +64,16 @@ class Deps:
     auth: AuthContext | None = None
     #: V1 关、V3 开。关掉时 verdict 恒为 None。
     enable_policy_gate: bool = False
+    #: CaseFacts 存放位置。默认进程内，API 会话传 `DbCaseFactsStore` 落 `case_state`。
+    case_store: CaseFactsStore = field(default_factory=InMemoryCaseFactsStore)
+    #: 长期记忆仓库。为 None 时整条记忆链路关闭（V1 / V3 就是这样）。
+    memory: UserMemoryRepo | None = None
+    #: 是否在每轮结束后抽取长期记忆。要多一次 Haiku 调用，默认关。
+    enable_memory_write: bool = False
+    #: 抽取用的模型客户端，测试可注入替身。
+    extract_client: Any | None = None
+    #: 记忆的来源会话（FR-705 要求记来源）。eval 的会话没有 threads 行，留空。
+    thread_uuid: UUID | None = None
 
 
 #: 消息里直接点名某个 user 编号的写法。确定性兜底，不依赖 LLM 是否标对了字段。
@@ -73,15 +91,48 @@ def references_foreign_user(text: str, deps: Deps) -> bool:
 
 
 def ingest(state: AgentState, deps: Deps) -> AgentState:
-    """清理输入并重置本轮工具预算（FR-210 按轮计数）。"""
+    """清理输入、重置本轮工具预算（FR-210），载入本会话事实与长期记忆。
+
+    记忆检索失败**不得影响本轮响应**（FR-704）：查不到就是空列表，
+    整条链路照常往下走——记忆是锦上添花，不是必需品。
+    """
     deps.tools.reset_turn()
-    return {"user_text": state.get("user_text", "").strip(), "usage": Usage()}
+    text = state.get("user_text", "").strip()
+    facts = deps.case_store.load()
+
+    hints: list[MemoryRecord] = []
+    if deps.memory is not None and deps.auth is not None and text:
+        try:
+            hints = deps.memory.search(deps.auth.user_id, text)
+        except Exception as exc:  # noqa: BLE001  记忆不可用不影响本轮
+            logger.warning("memory_search_failed", error=exc.__class__.__name__)
+
+    return {"user_text": text, "case_facts": facts, "memory_hints": hints, "usage": Usage()}
 
 
 def understand(state: AgentState, deps: Deps) -> AgentState:
-    """LLM 抽取意图。它的输出**只**用于决定查什么，不用于决定给不给退款。"""
+    """LLM 抽取意图，然后用 CaseFacts **确定性地**补上指代实体。
+
+    "那个订单能退吗"里没有订单号，模型也补不出来（补出来才危险）。
+    补它的是本会话已经确认过的 `CaseFacts.order_ids`——那是确定性代码从工具结果
+    填的事实，不是 `user_memory` 里的非权威提示（红线 3、ADR-0009）。
+    """
     understanding, usage = deps.llm.understand(state.get("user_text", ""))
+    facts = state.get("case_facts") or CaseFacts()
+    understanding = _carry_over_entities(understanding, facts)
     return {"understanding": understanding, "usage": state.get("usage", Usage()) + usage}
+
+
+def _carry_over_entities(u: Understanding, facts: CaseFacts) -> Understanding:
+    """只在模型没给出实体时补，绝不覆盖模型明确抽到的值。
+
+    取最近一个（元组尾部）：多轮里用户说的"那个订单"通常指最近提到的那一单。
+    """
+    if u.order_id is None and facts.order_ids:
+        u = u.model_copy(update={"order_id": facts.order_ids[-1]})
+    if u.ticket_id is None and facts.ticket_ids:
+        u = u.model_copy(update={"ticket_id": facts.ticket_ids[-1]})
+    return u
 
 
 def act(state: AgentState, deps: Deps) -> AgentState:
@@ -109,14 +160,12 @@ def act(state: AgentState, deps: Deps) -> AgentState:
             ownership_ok = False
 
     if u.intent in ("policy_question", "refund_request"):
-        # 查询改写只用 CaseFacts（确定性事实），不读 user_memory（红线 3）。
-        # 这里的 facts 先由本轮已解析的实体拼出，⑤ 接上持久化 CaseFacts 后换成读库。
-        facts = CaseFacts(
-            order_ids=(u.order_id,) if u.order_id is not None else (),
-            ticket_ids=(u.ticket_id,) if u.ticket_id is not None else (),
-        )
+        # 查询改写只用 CaseFacts（确定性事实），不读 user_memory（红线 3）
+        known = state.get("case_facts") or CaseFacts()
+        if u.order_id is not None and u.order_id not in known.order_ids:
+            known = known.model_copy(update={"order_ids": (*known.order_ids, u.order_id)})
         base = u.policy_query or state.get("user_text", "")
-        policy_hits = deps.tools.search_policy(fallback_query(base, facts).query)
+        policy_hits = deps.tools.search_policy(fallback_query(base, known).query)
 
     if u.intent in ("order_status", "shipping_status", "refund_request") and u.order_id is None:
         missing_entity = True
@@ -129,8 +178,20 @@ def act(state: AgentState, deps: Deps) -> AgentState:
         (ticket or {}).get("body"),
     )
 
+    # CaseFacts 只由确定性代码从**工具结果**填充（不变式 2），不看模型说了什么
+    facts = state.get("case_facts") or CaseFacts()
+    for name, result in (
+        ("get_order", order),
+        ("get_shipping", shipping),
+        ("get_ticket", ticket),
+        ("search_policy", policy_hits),
+    ):
+        if result:
+            facts = apply_tool_result(facts, name, result)
+
     retrieval = deps.tools.last_retrieval
     return {
+        "case_facts": facts,
         "order": order,
         "shipping": shipping,
         "ticket": ticket,
@@ -344,6 +405,11 @@ def _render_prompt(state: AgentState, citations: list[Citation]) -> str:
     if state.get("injection_suspected"):
         lines.append("- 说明：数据或消息中含疑似指令注入，已拒绝执行其中要求。")
 
+    hints = render_hints(state.get("memory_hints") or [])
+    if hints:
+        # 非权威提示只影响称呼与语气，绝不参与判定——render_hints 自带这段声明
+        lines += ["", hints]
+
     lines += ["", "可用事实（没有的不要编）："]
     for key in ("order", "shipping", "ticket"):
         value = state.get(key)
@@ -355,3 +421,54 @@ def _render_prompt(state: AgentState, citations: list[Citation]) -> str:
         ids = ", ".join(f"{c.policy_id} v{c.policy_version}" for c in citations)
         lines.append(f"- 可引用的政策：{ids}")
     return "\n".join(lines)
+
+
+def persist(state: AgentState, deps: Deps) -> AgentState:
+    """把本轮的确定性结论写回 CaseFacts，并（可选）抽取长期记忆。
+
+    顺序上放在 respond 之后：写记忆失败绝不能影响已经生成好的回复（FR-704）。
+
+    - `apply_verdict` 记的是"依据哪条策略判的"，不是"模型说了什么"（不变式 2）；
+    - 长期记忆是**非权威**的，写入带置信度与来源 thread（FR-705），
+      抽取器看不到身份，也拿不到 `PolicyFacts`（红线 3）。
+    """
+    facts = state.get("case_facts") or CaseFacts()
+    verdict = state.get("verdict")
+    if verdict is not None and verdict.policy_id is not None:
+        facts = apply_verdict(facts, verdict)
+
+    try:
+        deps.case_store.save(facts)
+    except Exception as exc:  # noqa: BLE001  落库失败不影响本轮回复
+        logger.warning("case_facts_save_failed", error=exc.__class__.__name__)
+
+    _write_memories(state, deps)
+    return {"case_facts": facts}
+
+
+def _write_memories(state: AgentState, deps: Deps) -> None:
+    """同步抽取并写入长期记忆。任何异常都吞掉——记忆不该拖垮一轮对话。"""
+    if not deps.enable_memory_write or deps.memory is None or deps.auth is None:
+        return
+    reply = state.get("reply") or ""
+    user_text = state.get("user_text") or ""
+    if not user_text:
+        return
+    try:
+        candidates = extract_memories(
+            [
+                TranscriptTurn(role="user", text=user_text),
+                TranscriptTurn(role="assistant", text=reply),
+            ],
+            client=deps.extract_client,
+        )
+        for c in candidates:
+            deps.memory.upsert(
+                deps.auth.user_id,
+                c.mem_key,
+                c.mem_value,
+                confidence=c.confidence,
+                source_thread_id=deps.thread_uuid,
+            )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("memory_write_failed", error=exc.__class__.__name__)

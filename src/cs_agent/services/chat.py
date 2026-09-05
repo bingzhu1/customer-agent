@@ -24,12 +24,14 @@ from cs_agent.domain.enums import DecisionOutcome, ReasonCode
 from cs_agent.eval.protocol import Citation, Usage
 from cs_agent.graph.build import build_graph
 from cs_agent.graph.llm import FallbackLlm, Llm
+from cs_agent.graph.memory_store import DbCaseFactsStore
 from cs_agent.graph.nodes import Deps
 from cs_agent.graph.state import AgentState
 from cs_agent.graph.tools import ToolBelt
 from cs_agent.memory.case_facts import CaseFacts
+from cs_agent.memory.user_memory import UserMemoryRepo
 from cs_agent.policy.schema import PolicySet, load_policies
-from cs_agent.rag.provider import default_retriever
+from cs_agent.rag.provider import default_provider, default_retriever
 from cs_agent.rag.retriever import PolicyRetriever
 from cs_agent.repositories.agent import ThreadRepository
 from cs_agent.repositories.biz import BizRepository
@@ -46,6 +48,7 @@ HANDOFF_TEXT = "可以为你转接人工客服。"
 
 _POLICIES: PolicySet | None = None
 _RETRIEVER: PolicyRetriever | None = None
+_MEMORY: UserMemoryRepo | None = None
 
 
 def get_policies() -> PolicySet:
@@ -151,7 +154,7 @@ class ChatService:
         now = datetime.now(UTC)
         self._threads.add_message(thread_id, role=ROLE_USER, content=text, now=now)
 
-        state = self._run_graph(text, now)
+        state = self._run_graph(text, thread_id, now)
         decision = state["decision"]
         reply = state.get("reply") or ""
 
@@ -175,13 +178,23 @@ class ChatService:
             latency_ms=round((time.perf_counter() - started) * 1000, 2),
         )
 
-    def _run_graph(self, text: str, now: datetime) -> AgentState:
+    def _memory_repo(self) -> UserMemoryRepo | None:
+        """长期记忆走与 RAG 同一个 embedding provider。关掉记忆时返回 None。"""
+        if not get_settings().memory_enabled:
+            return None
+        global _MEMORY
+        if _MEMORY is None:
+            _MEMORY = UserMemoryRepo(default_provider())
+        return _MEMORY
+
+    def _run_graph(self, text: str, thread_id: UUID, now: datetime) -> AgentState:
         policies = get_policies()
         belt = ToolBelt(
             repo=BizRepository(self._session, self._ctx),
             policies=policies,
             retriever=get_retriever(),
         )
+        memory = self._memory_repo()
         deps = Deps(
             llm=self._ensure_llm(),
             tools=belt,
@@ -190,6 +203,11 @@ class ChatService:
             auth=self._ctx,
             # API 走完整图（等同 V3）：资格判定必须由策略引擎给，不能落到"默认转人工"
             enable_policy_gate=True,
+            # CaseFacts 落 agent.case_state，会话跨轮、跨进程都能续上
+            case_store=DbCaseFactsStore(thread_id),
+            memory=memory,
+            enable_memory_write=memory is not None,
+            thread_uuid=thread_id,
         )
         graph = build_graph(deps)
         raw: dict[str, Any] = graph.invoke(
