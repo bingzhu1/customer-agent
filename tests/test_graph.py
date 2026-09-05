@@ -27,6 +27,9 @@ from cs_agent.graph.nodes import Deps
 from cs_agent.graph.tools import ToolBelt
 from cs_agent.graph.untrusted import detect_injection, wrap_untrusted
 from cs_agent.policy.schema import load_policies
+from cs_agent.rag.embeddings import FakeEmbeddings
+from cs_agent.rag.ingest import ingest_policies
+from cs_agent.rag.provider import default_retriever
 from cs_agent.repositories.biz import BizRepository
 from cs_agent.seed.biz_seed import run_seed
 from cs_agent.seed.reference import EVAL_NOW
@@ -64,6 +67,8 @@ def seeded_engine() -> Engine:
         pytest.skip(f"数据库不可达，跳过数据库测试：{exc.__class__.__name__}")
     command.upgrade(Config(str(REPO_ROOT / "alembic.ini")), "head")
     run_seed(engine)
+    # 检索用的语料：与检索器同一个 provider（FakeEmbeddings），否则向量空间对不上
+    ingest_policies(REPO_ROOT / "policies", provider=FakeEmbeddings(), engine=engine)
     return engine
 
 
@@ -75,7 +80,11 @@ def session(seeded_engine: Engine) -> Iterator[Session]:
 
 def _belt(session: Session, user_id: int = MAIN_USER) -> ToolBelt:
     repo = BizRepository(session, AuthContext.of(user_id, [Role.CUSTOMER]))
-    return ToolBelt(repo=repo, policies=load_policies(REPO_ROOT / "policies"))
+    return ToolBelt(
+        repo=repo,
+        policies=load_policies(REPO_ROOT / "policies"),
+        retriever=default_retriever(),
+    )
 
 
 def _run(
@@ -127,9 +136,21 @@ def test_get_order_of_other_user_returns_none(session: Session) -> None:
 
 
 def test_search_policy_returns_citable_fields(session: Session) -> None:
-    hits = _belt(session).search_policy("退款期限是多久")
+    """真检索：返回可引用字段，且 score 是相似度（供 τ 门控用）。"""
+    belt = _belt(session)
+    hits = belt.search_policy("标准商品多久之内可以退款")
     assert hits
-    assert {"policy_id", "policy_version", "anchor"} <= set(hits[0])
+    assert {"policy_id", "policy_version", "anchor", "content", "score"} <= set(hits[0])
+    assert belt.last_retrieval is not None
+    assert belt.last_retrieval.max_score == pytest.approx(hits[0]["score"], abs=1e-3)
+
+
+def test_search_policy_uncovered_topic_is_no_result(session: Session) -> None:
+    """政策未覆盖的主题必须落到 no_result 带，决策层据此转人工而不是编造。"""
+    belt = _belt(session)
+    belt.search_policy("海外直邮的关税谁承担")
+    assert belt.last_retrieval is not None
+    assert belt.last_retrieval.band == "no_result"
 
 
 def test_tool_calls_are_recorded(session: Session) -> None:

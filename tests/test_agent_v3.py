@@ -11,6 +11,8 @@ from cs_agent.domain.enums import DecisionOutcome, ReasonCode
 from cs_agent.eval.protocol import Usage
 from cs_agent.eval.schema import Auth
 from cs_agent.graph.llm import Understanding
+from cs_agent.rag.embeddings import FakeEmbeddings
+from cs_agent.rag.ingest import ingest_policies
 from cs_agent.seed.biz_seed import run_seed
 from cs_agent.seed.reference import EVAL_NOW
 from cs_agent.settings import get_settings
@@ -46,6 +48,7 @@ def seeded() -> None:
     except OperationalError as exc:  # pragma: no cover - 取决于本机环境
         pytest.skip(f"数据库不可达，跳过数据库测试：{exc.__class__.__name__}")
     run_seed(engine)
+    ingest_policies(provider=FakeEmbeddings(), engine=engine)
 
 
 @pytest.fixture
@@ -183,3 +186,14 @@ def test_non_answer_replies_never_call_the_model(seeded: None) -> None:
     assert result.usage.llm_calls == 1  # 只有 understand
     assert "§9.4" not in result.reply
     assert "（模型正文）" not in result.reply
+
+
+def test_citation_anchor_falls_back_to_yaml(seeded: None) -> None:
+    """判定用的策略未必出现在本轮检索里，anchor 要能从 PolicySet 兜底取到（前端要跳锚点）。"""
+    agent = V3PolicyAgent(llm=RefundLlm())  # type: ignore[arg-type]
+    session = agent.start_session(Auth(user_id=101), now=EVAL_NOW)
+    result = session.send_user("订单 82915 我要退款。")
+    session.close()
+    assert result.citations
+    assert result.citations[0].policy_id == "REFUND-STD-001"
+    assert result.citations[0].anchor == "refund#standard"

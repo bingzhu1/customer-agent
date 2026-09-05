@@ -34,9 +34,11 @@ from cs_agent.graph.llm import FallbackLlm, Llm, Understanding
 from cs_agent.graph.state import AgentState
 from cs_agent.graph.tools import ToolBelt
 from cs_agent.graph.untrusted import detect_injection
+from cs_agent.memory.case_facts import CaseFacts
 from cs_agent.policy.engine import PolicyVerdict, evaluate
 from cs_agent.policy.facts import PolicyFacts
 from cs_agent.policy.schema import PolicySet
+from cs_agent.rag.rewrite import fallback_query
 
 #: 需要资格判定的意图。这些意图缺少 verdict 时矩阵会转人工，不会默认放行。
 ELIGIBILITY_INTENTS = frozenset({"refund_request"})
@@ -106,9 +108,15 @@ def act(state: AgentState, deps: Deps) -> AgentState:
         if ticket is None:
             ownership_ok = False
 
-    if u.intent in ("policy_question", "refund_request") and (u.policy_query or u.intent):
-        query = u.policy_query or state.get("user_text", "")
-        policy_hits = deps.tools.search_policy(query)
+    if u.intent in ("policy_question", "refund_request"):
+        # 查询改写只用 CaseFacts（确定性事实），不读 user_memory（红线 3）。
+        # 这里的 facts 先由本轮已解析的实体拼出，⑤ 接上持久化 CaseFacts 后换成读库。
+        facts = CaseFacts(
+            order_ids=(u.order_id,) if u.order_id is not None else (),
+            ticket_ids=(u.ticket_id,) if u.ticket_id is not None else (),
+        )
+        base = u.policy_query or state.get("user_text", "")
+        policy_hits = deps.tools.search_policy(fallback_query(base, facts).query)
 
     if u.intent in ("order_status", "shipping_status", "refund_request") and u.order_id is None:
         missing_entity = True
@@ -121,11 +129,16 @@ def act(state: AgentState, deps: Deps) -> AgentState:
         (ticket or {}).get("body"),
     )
 
+    retrieval = deps.tools.last_retrieval
     return {
         "order": order,
         "shipping": shipping,
         "ticket": ticket,
         "policy_hits": policy_hits,
+        "retrieval_max_score": retrieval.max_score if retrieval is not None else None,
+        "retrieval_band": retrieval.band if retrieval is not None else None,
+        # 有可引用 chunk 才允许低置信回答（§9.4 规则 14 约束 3），否则退回 14b 转人工
+        "has_citable_chunk": bool(policy_hits),
         "tool_calls": list(deps.tools.calls),
         "ownership_ok": ownership_ok,
         "missing_entity": missing_entity,
@@ -201,6 +214,10 @@ def decide(state: AgentState, deps: Deps) -> AgentState:
             # 而是 eligibility_intent——矩阵仍会在通过时给 REQUIRE_CONFIRMATION 之前的那一格。
             is_write_intent=eligibility,
             is_eligibility_intent=eligibility,
+            retrieval_max_score=state.get("retrieval_max_score"),
+            tau_low=deps.tools.retriever.tau_low,
+            tau_high=deps.tools.retriever.tau_high,
+            has_citable_chunk=state.get("has_citable_chunk", False),
             missing_entity=state.get("missing_entity", False),
         )
     )
@@ -224,7 +241,7 @@ def respond(state: AgentState, deps: Deps) -> AgentState:
     """
     decision = state["decision"]
     verdict: PolicyVerdict | None = state.get("verdict")
-    citations = _citations(state, verdict)
+    citations = _citations(state, verdict, deps)
     skeleton = templates.render(decision, _template_vars(state, verdict, deps))
 
     if decision.outcome is not DecisionOutcome.ANSWER:
@@ -277,14 +294,14 @@ def _template_vars(
     )
 
 
-def _citations(state: AgentState, verdict: PolicyVerdict | None) -> list[Citation]:
+def _citations(state: AgentState, verdict: PolicyVerdict | None, deps: Deps) -> list[Citation]:
     """判定用了哪条策略就引哪条；没判定时引检索命中的条目。"""
     if verdict is not None and verdict.policy_id is not None:
         return [
             Citation(
                 policy_id=verdict.policy_id,
                 policy_version=verdict.policy_version,
-                anchor=_anchor_of(state, verdict.policy_id),
+                anchor=_anchor_of(state, verdict.policy_id, deps),
             )
         ]
     return [
@@ -297,11 +314,19 @@ def _citations(state: AgentState, verdict: PolicyVerdict | None) -> list[Citatio
     ]
 
 
-def _anchor_of(state: AgentState, policy_id: str) -> str | None:
+def _anchor_of(state: AgentState, policy_id: str, deps: Deps) -> str | None:
+    """先用本轮检索命中的 anchor，取不到再退回 YAML。
+
+    退款流程里判定用的策略未必出现在本轮检索结果里（判定看事实，检索看问句），
+    那时 anchor 会是 null，前端就没法跳到条款锚点——所以兜底从 PolicySet 取。
+    """
     for hit in state.get("policy_hits", []):
         if hit["policy_id"] == policy_id:
             return str(hit["anchor"])
-    return None
+    try:
+        return deps.policies.by_id(policy_id).anchor
+    except KeyError:  # pragma: no cover - 判定与策略集不同源时才会发生
+        return None
 
 
 def _render_prompt(state: AgentState, citations: list[Citation]) -> str:

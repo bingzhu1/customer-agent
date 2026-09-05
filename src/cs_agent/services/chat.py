@@ -29,6 +29,8 @@ from cs_agent.graph.state import AgentState
 from cs_agent.graph.tools import ToolBelt
 from cs_agent.memory.case_facts import CaseFacts
 from cs_agent.policy.schema import PolicySet, load_policies
+from cs_agent.rag.provider import default_retriever
+from cs_agent.rag.retriever import PolicyRetriever
 from cs_agent.repositories.agent import ThreadRepository
 from cs_agent.repositories.biz import BizRepository
 from cs_agent.settings import get_settings
@@ -43,6 +45,7 @@ HANDOFF_OUTCOMES = frozenset({DecisionOutcome.REQUIRE_HUMAN, DecisionOutcome.DEG
 HANDOFF_TEXT = "可以为你转接人工客服。"
 
 _POLICIES: PolicySet | None = None
+_RETRIEVER: PolicyRetriever | None = None
 
 
 def get_policies() -> PolicySet:
@@ -51,6 +54,14 @@ def get_policies() -> PolicySet:
     if _POLICIES is None:
         _POLICIES = load_policies(POLICY_DIR)
     return _POLICIES
+
+
+def get_retriever() -> PolicyRetriever:
+    """进程级缓存：provider 与阈值都不随请求变。"""
+    global _RETRIEVER
+    if _RETRIEVER is None:
+        _RETRIEVER = default_retriever()
+    return _RETRIEVER
 
 
 @dataclass(frozen=True, slots=True)
@@ -166,7 +177,11 @@ class ChatService:
 
     def _run_graph(self, text: str, now: datetime) -> AgentState:
         policies = get_policies()
-        belt = ToolBelt(repo=BizRepository(self._session, self._ctx), policies=policies)
+        belt = ToolBelt(
+            repo=BizRepository(self._session, self._ctx),
+            policies=policies,
+            retriever=get_retriever(),
+        )
         deps = Deps(
             llm=self._ensure_llm(),
             tools=belt,

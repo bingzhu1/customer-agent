@@ -4,14 +4,39 @@
     {
       "name": "frontend",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["--prefix", "frontend", "run", "dev"],
+      "runtimeArgs": [
+        "--prefix",
+        "frontend",
+        "run",
+        "dev"
+      ],
       "port": 5173
     },
     {
       "name": "api",
       "runtimeExecutable": "uv",
-      "runtimeArgs": ["run", "uvicorn", "cs_agent.api.main:app", "--port", "8000"],
+      "runtimeArgs": [
+        "run",
+        "uvicorn",
+        "cs_agent.api.main:app",
+        "--port",
+        "8000"
+      ],
       "port": 8000
+    },
+    {
+      "name": "frontend-restyle",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        "/Users/bingzhu/Desktop/ca-frontend/frontend",
+        "run",
+        "dev",
+        "--",
+        "--port",
+        "5174"
+      ],
+      "port": 5174
     }
   ]
 }
