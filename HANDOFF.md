@@ -52,7 +52,7 @@
 | session 5：Phase 2 → Phase 5 记忆 | `phase2-rag` / `../ca-phase2` | `rag/**`（除 `rag/provider.py`，该文件为 P1 新建、归 P1）、`memory/**`、`scripts/calibrate_tau.py`、`docs/adr/0007` | `cs_agent_p2` |
 | session 6：前端 | `frontend-chat` / `../ca-frontend` | `frontend/**` | 无 |
 | session 3：Phase 1 | `phase1-skeleton` / `../ca-phase1` | Phase 1 全部范围（用户已在该 session 内验收 2 个 milestone：0002 迁移 + AuthContext + Repository；FastAPI / JWT / 可观测性，新依赖 fastapi / uvicorn / pyjwt / prometheus-client / httpx 已获用户同意）。共享文件改动：settings.py 加 jwt_*；test_migrations 合并时以 master 的一次性库版为准 | `cs_agent_p1` |
-| FE（前端） | `frontend-chat` / `../ca-frontend` | `frontend/**`、`.gitignore` 的 frontend 两行、本表这一行 | 无数据库（对 mock，后接真实 API） |
+| FE（前端） | `frontend-chat` / `../ca-frontend` | `frontend/**`、`.gitignore` 的 frontend 两行、本表这一行。**2026-09-05 晚起 master session 在此分支做视觉改版（方案 A 三栏）**：动 `styles.css`、`index.html`、`pages/**`、`timeline/*Item.tsx`、新增 `components/**` 与 `timeline/workspace.ts`；不动 `api/**` | 无数据库（对 mock，后接真实 API） |
 
 合并顺序（用户 2026-09-05 拍板）：**等 V0 交付后**一并合——V0 → phase0-eval-foundation → main（tag `v0.1-phase0`）→ phase1-skeleton rebase 到 main。
 `uv.lock` 不手工合，合并后重跑 `uv sync`。
