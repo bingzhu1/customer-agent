@@ -39,6 +39,8 @@ class AgentState(TypedDict, total=False):
     ticket: dict[str, Any] | None
     policy_hits: list[dict[str, Any]]
     refunds: list[dict[str, Any]]
+    #: 该订单已有 succeeded 的退款。防重复退款的第二道闸（矩阵规则 11）。
+    prior_refund_exists: bool
     payments: list[dict[str, Any]]
     profile: dict[str, Any] | None
     #: 本轮检索的最高相似度与分带；未检索时为 None（决策矩阵据此跳过 τ 门控）

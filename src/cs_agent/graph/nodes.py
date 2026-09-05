@@ -29,7 +29,13 @@ from cs_agent.auth.context import AuthContext
 from cs_agent.decision import templates
 from cs_agent.decision.matrix import DecisionInput
 from cs_agent.decision.matrix import decide as run_matrix
-from cs_agent.domain.enums import DecisionOutcome, ItemCategory, ItemCondition, ReasonCode
+from cs_agent.domain.enums import (
+    DecisionOutcome,
+    ItemCategory,
+    ItemCondition,
+    ReasonCode,
+    RefundStatus,
+)
 from cs_agent.eval.protocol import Citation, Usage
 from cs_agent.graph.llm import FallbackLlm, Llm, Understanding
 from cs_agent.graph.memory_store import CaseFactsStore, InMemoryCaseFactsStore
@@ -219,9 +225,15 @@ def act(state: AgentState, deps: Deps) -> AgentState:
         if result:
             facts = apply_tool_result(facts, name, result)
 
+    # 该订单是否已经真的退过款。**这是防重复退款的第二道闸**：
+    # 幂等键带时间窗，跨窗口就是新键、新动作，光靠它挡不住"隔一小时再退一次"。
+    # 权威依据是 biz.refunds 里 succeeded 的记录，不是 agent 侧的动作状态。
+    prior_refund_exists = any(r.get("status") == RefundStatus.SUCCEEDED.value for r in refunds)
+
     retrieval = deps.tools.last_retrieval
     return {
         "case_facts": facts,
+        "prior_refund_exists": prior_refund_exists,
         "order": order,
         "shipping": shipping,
         "ticket": ticket,
@@ -309,6 +321,8 @@ def decide(state: AgentState, deps: Deps) -> AgentState:
             # FR-210 的超预算现在是矩阵规则 6b，不再在节点里事后钳位——
             # 钳位读不出"为什么"，也没法被矩阵测试覆盖
             tool_budget_exceeded=state.get("tool_budget_exceeded", False),
+            # 已经退过就不再产生新的待确认动作（矩阵规则 11）
+            idempotent_replay=state.get("prior_refund_exists", False),
             is_write_intent=eligibility,
             is_eligibility_intent=eligibility,
             retrieval_max_score=state.get("retrieval_max_score"),
@@ -340,6 +354,14 @@ def respond(state: AgentState, deps: Deps) -> AgentState:
         # 非 ANSWER 的分支**逐字**用模板，绝不让模型改写（FR-407）：
         # 模型改写过的拒绝会复述用户的注入原文，两次"未找到"也会措辞不一致。
         return {"reply": skeleton, "citations": citations, "usage": state.get("usage", Usage())}
+    if decision.reason_code is ReasonCode.IDEMPOTENT_REPLAY:
+        # 模板说"下面是当时的结果"，结果本身从 biz.refunds 拼，确定性的，不让模型转述金额
+        detail = _replay_detail(state)
+        return {
+            "reply": f"{skeleton}{detail}",
+            "citations": citations,
+            "usage": state.get("usage", Usage()),
+        }
     if skeleton and decision.reason_code is not ReasonCode.RETRIEVAL_LOW_CONFIDENCE:
         return {"reply": skeleton, "citations": citations, "usage": state.get("usage", Usage())}
 
@@ -353,6 +375,19 @@ def respond(state: AgentState, deps: Deps) -> AgentState:
 
 
 # --- 辅助 ---------------------------------------------------------------------
+
+
+def _replay_detail(state: AgentState) -> str:
+    """已退款的事实明细。金额与时间都来自 `biz.refunds`，不经模型。"""
+    succeeded = [
+        r for r in (state.get("refunds") or []) if r.get("status") == RefundStatus.SUCCEEDED.value
+    ]
+    if not succeeded:
+        return ""
+    record = succeeded[-1]
+    when = (record.get("executed_at") or record.get("created_at") or "")[:10]
+    amount = record.get("amount")
+    return f"退款 {amount} 元已于 {when} 处理完成。" if when else f"退款 {amount} 元已处理完成。"
 
 
 def _template_vars(
