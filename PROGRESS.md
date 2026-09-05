@@ -10,3 +10,4 @@
 | 2026-09-05 | 前期 | 写 `docs/PRD.md` v1.0（18 章，1270 行） | `e1ce768` | 待用户 review |
 | 2026-09-05 | 前期 | 写 `CLAUDE.md` 工作规则 + 9 篇 ADR + PROGRESS/HANDOFF | `3ce3705` | 待用户 review |
 | 2026-09-05 | 前期 | 定主模型 Claude Sonnet 5、仓库转 public；PRD 增补 §13.4 模型配置与成本口径（含成本超标结论）、FR-911/912 | `25e5fc4` | 待用户 review |
+| 2026-09-05 | 前期 | 记录环境问题（本 session 无法切到 `claude-fable-5-1`），更新 HANDOFF 交接，转到新 session 继续 | `6e1da18` | — |

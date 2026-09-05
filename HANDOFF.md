@@ -11,7 +11,7 @@
 
 - **Phase**：Phase 0 未开始（PRD 与工作规则已成文，等用户评审通过）
 - **分支**：`main`
-- **最新 commit**：见 `git log -1`
+- **最新 commit**：见 `git log -1`（截至交接：`25e5fc4` + PROGRESS hash 修正）
 - **仓库**：https://github.com/bingzhu1/customer-agent （public）
 - **代码**：尚未写任何代码。目前只有文档。
 
@@ -28,12 +28,21 @@
 
 ## 下一步要做什么
 
-1. 等用户评审 `docs/PRD.md` 和 `CLAUDE.md`，按反馈修订
-2. 评审通过后开分支 `phase0-eval-foundation`，进入 Phase 0
-3. Phase 0 首批产物（文件不相交，可用 subagent 并行）：
+**当前唯一阻塞项**：用户需回答"单会话成本目标 $0.05 维持还是放宽"（未决问题 2）。
+我的建议是维持，作为倒逼优化的压力，Phase 6 实测不达标时据实修订目标。
+
+回答后即可动工：
+
+1. 开分支 `phase0-eval-foundation`
+2. Phase 0 首批产物（文件不相交，**用户已同意用 subagent 并行**）：
    - `biz` seed 数据（约 20 用户 / 60 订单，含超期、食品、定制、高额边界样本）
-   - `policies/*.yaml`（退款 / 物流 / 保修 / 会员 / 投诉）
-   - golden dataset 34–54 条
+   - `policies/*.yaml`（退款 / 物流 / 保修 / 会员 / 投诉），格式见 PRD §9.2
+   - golden dataset 34–54 条，格式见 PRD §12.3，分类与条数见 §12.2
+3. 再串行做：docker-compose(pg + langfuse)、Alembic、eval runner、V0 naive baseline 实测
+4. Phase 0 的 DoD 见 PRD §15
+
+**新 session 的第一件事**：读 `CLAUDE.md`（工作规则，含回复格式与三条红线）
+和 `docs/PRD.md`（§15 路线图 + §12 评估方案是 Phase 0 的直接依据）。
 
 ---
 
@@ -50,6 +59,15 @@
 - 性能目标（PRD §13.1）：认可
 - 主模型：**Claude Sonnet 5**（`claude-sonnet-5`），降级备用 Claude Haiku 4.5（`claude-haiku-4-5`）
 - 仓库可见性：已转 **public**
+
+## 环境备注
+
+- **本机的上一个 session 无法使用 `claude-fable-5-1`**（`/model claude-fable-5-1`
+  切换后未生效，实际仍以 Opus 5 运行）。因此在 2026-09-05 换到新 session 继续。
+  新 session 开工前先确认当前模型：若要用 Fable，用 `/model claude-fable-5`
+  （注意不带 `-1` 后缀）；不确定就直接用默认模型，不影响任何架构决策。
+
+---
 
 ## 已知坑
 
