@@ -25,6 +25,8 @@ from cs_agent.memory.case_facts import (
 )
 from cs_agent.memory.case_state import CaseStateRepo
 from cs_agent.memory.compaction import ConversationWindow, Message, compact
+from cs_agent.memory.extract import MemoryCandidate, TranscriptTurn
+from cs_agent.memory.jobs import ExtractionJob, ExtractionQueue
 from cs_agent.memory.user_memory import DEFAULT_TTL_DAYS, UserMemoryRepo
 from cs_agent.rag.embeddings import FakeEmbeddings
 
@@ -304,3 +306,65 @@ def test_narrative_before_facts_does_not_lose_facts(engine: Engine, thread: UUID
     repo.save_facts(thread, facts, now=NOW)
     assert repo.load_facts(thread) == facts
     assert repo.load_narrative(thread)[0] == "先有叙述"
+
+
+# --- 异步抽取端到端（FR-704 + FR-705）---------------------------------------
+
+
+def test_async_extraction_writes_real_rows(repo: UserMemoryRepo, user: int) -> None:
+    """队列跑完后，抽出来的候选真的落进了 user_memory，且带齐来源与 TTL。"""
+    thread_id = uuid4()
+
+    def extractor(_: object) -> list[MemoryCandidate]:
+        return [
+            MemoryCandidate(
+                mem_key="channel_preference",
+                mem_value="希望通过短信接收通知",
+                category="channel_preference",
+                confidence=0.9,
+            ),
+            MemoryCandidate(
+                mem_key="communication_style",
+                mem_value="回复请尽量简短",
+                category="communication_style",
+                confidence=0.2,  # 低于阈值，不该写
+            ),
+        ]
+
+    with ExtractionQueue(repo, extractor=extractor) as queue:
+        queue.submit(
+            ExtractionJob(
+                user_id=user,
+                transcript=(TranscriptTurn(role="user", text="以后用短信通知我"),),
+                source_thread_id=thread_id,
+                now=NOW,
+            )
+        )
+        assert queue.drain(timeout=10) is True
+
+    written = repo.get(user, "channel_preference")
+    assert written is not None
+    assert written.mem_value == "希望通过短信接收通知"
+    assert written.source_thread_id == thread_id
+    assert written.ttl_at == NOW + timedelta(days=DEFAULT_TTL_DAYS)
+    assert repo.get(user, "communication_style") is None, "低置信候选不该写库"
+    assert repo.search(user, "短信通知", now=NOW)[0].mem_key == "channel_preference"
+
+
+def test_async_extraction_survives_a_broken_extractor(repo: UserMemoryRepo, user: int) -> None:
+    """FR-704：抽取失败不得影响调用方，只体现在 stats 上。"""
+
+    def boom(_: object) -> list[MemoryCandidate]:
+        raise RuntimeError("模型挂了")
+
+    with ExtractionQueue(repo, extractor=boom) as queue:
+        queue.submit(
+            ExtractionJob(
+                user_id=user,
+                transcript=(TranscriptTurn(role="user", text="随便说说"),),
+                now=NOW,
+            )
+        )
+        queue.drain(timeout=10)
+        assert queue.stats.failed == 1
+    assert repo.search(user, "随便说说", now=NOW) == []
