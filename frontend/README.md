@@ -6,7 +6,16 @@
 
 Vite + React + TypeScript，无组件库、无状态库、纯 CSS。
 
-三栏布局：左侧会话列表（本次会话里建过 / 打开过的 thread）· 中间对话流 · 右侧"本轮判定"面板
+两个界面共用同一份会话状态，登录时选进哪个：
+
+| 路由 | 给谁看 | 有什么 |
+|---|---|---|
+| `#/chat` 客户界面（默认） | 终端客户 | 单栏对话，"客服 Tracy 正在为您服务"，只有回复正文、说人话的退款确认卡、转人工提示、"查看依据的政策"。**不出现** reason_code / 置信 / 工具 / 用量 / request_id |
+| `#/admin` 客服工作台 | 演示与排障 | 三栏，判定细节全展示。客户在 `#/chat` 聊的会话，这里能看到同一条的判定 |
+
+客服人设（名字、头像底色、副标题）在 `src/persona.ts`，只改一处。
+
+工作台三栏布局：左侧会话列表（本次会话里建过 / 打开过的 thread）· 中间对话流 · 右侧"本轮判定"面板
 （decision / reason_code / 置信 / 引用 / 工具 / 用量）。对话流里只留回复正文、工具调用一行、
 确认卡或说明卡、一行判定小字。视觉稿见 2026-09-05 的设计画布"客服 Agent 工作台"（方案 A）。
 
@@ -88,8 +97,12 @@ src/
   components/Sidebar.tsx        左栏会话列表 + 按 id 打开 + 身份
   components/JudgmentPanel.tsx  右栏本轮判定（原 DebugDrawer）
   components/Icon.tsx           线性 SVG 图标，不用 emoji
-  useWorkspace.ts       副作用层：建会话 / 发消息 / 确认 / 拉历史 / 切换，页面只排版
-  pages/Login.tsx pages/Chat.tsx pages/Review.tsx
+  components/Avatar.tsx         客服头像（抽象人形 + 耳麦）
+  persona.ts            客服人设常量
+  useWorkspace.ts       副作用层：建会话 / 发消息 / 确认 / 拉历史 / 切换；在 App 层调一次，两个界面共用
+  pages/CustomerChat.tsx  #/chat 客户界面
+  pages/Chat.tsx          #/admin 客服工作台
+  pages/Login.tsx pages/Review.tsx
 ```
 
 会话列表现在只有本次会话里建过或打开过的 thread；后端 `GET /v1/threads`（FR-109，PRD v1.5）

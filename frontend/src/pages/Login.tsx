@@ -12,10 +12,13 @@ import { describeError } from '../api/errors'
 import type { ApiClient, WhoAmI } from '../api/types'
 import Icon from '../components/Icon'
 
+/** 登录后进哪个界面：客户界面只有对话；工作台是三栏全量视图 */
+export type Entry = 'customer' | 'admin'
+
 interface Props {
   client: ApiClient
   /** 写入 token → 调 whoami → 成功则登录，失败抛错 */
-  onLogin: (token: string) => Promise<WhoAmI>
+  onLogin: (token: string, entry: Entry) => Promise<WhoAmI>
 }
 
 export default function Login({ client, onLogin }: Props) {
@@ -23,6 +26,7 @@ export default function Login({ client, onLogin }: Props) {
   const [pasted, setPasted] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [entry, setEntry] = useState<Entry>('customer')
 
   const canIssue = client.capabilities.devToken
 
@@ -30,7 +34,7 @@ export default function Login({ client, onLogin }: Props) {
     setBusy(true)
     setError(null)
     try {
-      await onLogin(await getToken())
+      await onLogin(await getToken(), entry)
     } catch (cause) {
       const view = describeError(cause)
       setError(`${view.title}：${view.detail}（${view.code}）`)
@@ -49,6 +53,15 @@ export default function Login({ client, onLogin }: Props) {
         <p className="muted">
           {USE_MOCK ? 'mock 数据源，不需要后端，user_id 随便填。' : `后端 ${API_BASE}，身份以服务端 whoami 为准。`}
         </p>
+
+        <div className="segmented" role="radiogroup" aria-label="进入方式">
+          <button className={entry === 'customer' ? 'on' : ''} role="radio" aria-checked={entry === 'customer'} onClick={() => setEntry('customer')}>
+            客户界面
+          </button>
+          <button className={entry === 'admin' ? 'on' : ''} role="radio" aria-checked={entry === 'admin'} onClick={() => setEntry('admin')}>
+            客服工作台
+          </button>
+        </div>
 
         <section className="login-section">
           <label className="field-label" htmlFor="login-user">
