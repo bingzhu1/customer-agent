@@ -24,6 +24,7 @@ from cs_agent.memory.case_facts import (
     apply_tool_result,
 )
 from cs_agent.memory.case_state import CaseStateRepo
+from cs_agent.memory.compaction import ConversationWindow, Message, compact
 from cs_agent.memory.user_memory import DEFAULT_TTL_DAYS, UserMemoryRepo
 from cs_agent.rag.embeddings import FakeEmbeddings
 
@@ -265,6 +266,35 @@ def test_narrative_compression_never_touches_case_facts(engine: Engine, thread: 
     summary, version = repo.load_narrative(thread)
     assert summary == "用户咨询了退款，随后确认。"
     assert version == 2, "summary_version 恒等于叙述被写过的次数"
+
+
+def test_compaction_result_persists_without_touching_case_facts(
+    engine: Engine, thread: UUID
+) -> None:
+    """FR-703 端到端：压缩产出的摘要落盘后，CaseFacts 与 pending_action 一字未动。"""
+    repo = CaseStateRepo(engine=engine)
+    facts = apply_action(
+        apply_tool_result(CaseFacts(), "get_order", {"order_id": 82913, "total_amount": "89.00"}),
+        ActionRecord(action_id="a1", action_type="refund", status="proposed"),
+    )
+    repo.save_facts(thread, facts, now=NOW)
+
+    class _Summarizer:
+        def summarize(self, previous_summary: str | None, messages: object) -> str:
+            return "用户咨询了 82913 的退款，尚未确认。"
+
+    win = ConversationWindow(
+        messages=tuple(
+            Message(role="user" if i % 2 == 0 else "assistant", text="话" * 40) for i in range(20)
+        )
+    )
+    result = compact(win, _Summarizer(), threshold=50, keep_recent=6)
+    assert result.compacted is True
+    repo.save_narrative(thread, result.window.narrative_summary or "", now=NOW)
+
+    assert repo.load_facts(thread) == facts
+    assert repo.load_facts(thread).pending_action is not None
+    assert repo.load_narrative(thread)[0] == "用户咨询了 82913 的退款，尚未确认。"
 
 
 def test_narrative_before_facts_does_not_lose_facts(engine: Engine, thread: UUID) -> None:
