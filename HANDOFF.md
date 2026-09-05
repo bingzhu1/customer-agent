@@ -9,27 +9,28 @@
 
 ## 当前状态
 
-- **Phase**：Phase 0 进行中 —— milestone 1（环境骨架）已验收；milestone 2（数据产物）已完成，等用户验收
+- **Phase**：Phase 0 进行中 —— milestone 1、2 已验收；milestone 3（eval runner）已完成，等用户验收
 - **分支**：`phase0-eval-foundation`（从 `main` 切出，尚未开 PR）
 - **最新 commit**：见 `git log -1`
 - **仓库**：https://github.com/bingzhu1/customer-agent （public）
 - **模型**：本 session 为 Fable 5.1，上一 session 的模型切换问题已不存在
 
-## 本 milestone（2）产物
+## 本 milestone（3）产物：eval runner
 
-- `docs/phase0-fixtures.md`：seed / policy / golden 三路共用的 id 与事实契约（**改 id 必须三路同步**），§8 是 effect → 决策映射
-- `src/cs_agent/domain/enums.py`、`policy/schema.py`、`eval/schema.py`：受限枚举与两份 pydantic schema
-- `src/cs_agent/db/`（biz 7 表 + agent.eval_runs/eval_results）、`alembic/`（迁移 0001）、`src/cs_agent/seed/`（`EVAL_NOW = 2026-09-01T00:00:00Z` 在 `seed/reference.py`，策略引擎与 runner 都要用它当"今天"）
-- `policies/*.yaml` 11 条规则；`data/golden/*.yaml` 54 条用例（security / memory 全部逐条 review，rag 4 条逐条）
-- 测试 95 个：schema 形状、策略一致性、golden 一致性、seed 对契约参数化、迁移往返、跨产物交叉核对
-- `make migrate` / `make seed` 已可用；`make eval` 仍是 TODO
+- `src/cs_agent/eval/`：`protocol.py`（被测接口）· `assertions.py`（Expect → Check）· `side_effects.py`（查库探针）·
+  `runner.py`（多轮驱动 + 跨轮特判）· `metrics.py`（PRD §12.4）· `report.py`（markdown + JSON）·
+  `store.py`（eval_runs / eval_results）· `judge.py`（Haiku 评判语气 / groundedness，`--judge` 开启）·
+  `dummy.py`（哑 agent）· `registry.py`（`--agent` 名 → 实例，v0 惰性导入 `cs_agent.agents.v0_naive`）· `__main__.py`
+- `make eval AGENT=dummy|v0 EVAL_ARGS="--judge --filter SEC --no-db --strict"`
+- 报表：`eval_reports/<时间戳>_<agent>.md` + `latest_<agent>.md`；JSON 同名（.gitignore 忽略）
+- 基线：哑 agent 1/54，硬门槛 FAIL —— 用作 runner 的反向校验
 
 ## 下一步要做什么
 
-1. 用户验收 milestone 2（验证清单见最后一次回复）
-2. milestone 3：eval runner —— `make eval` 一条命令跑完 54 条，输出 markdown 报表到 `eval_reports/` 并写 `agent.eval_runs/eval_results`；
-   runner 直接调用一个 `AgentUnderTest` 接口（不走 HTTP），断言逻辑覆盖 `Expect` 全部字段（含 any_of、citations_must_not_be_empty、no_certainty_wording）
-3. milestone 4：V0 naive baseline（裸 LLM，无工具无检索）接入 runner 实测，报表进版本库，Phase 0 收官开 PR
+1. 用户验收 milestone 3
+2. 合并 session 2 的 `phase0-v0-baseline`（V0 naive）到 `phase0-eval-foundation`，跑 `make eval AGENT=v0`，
+   报表进版本库；对照 PRD §12.6 V0 行写"裸 LLM 错在哪"小结 → Phase 0 收官，开 PR 合 `main`，打 tag `v0.1-phase0`
+3. session 3 的 `phase1-skeleton` 在 Phase 0 合入后 rebase 到 main
 4. Phase 0 的 DoD 见 PRD §15
 
 ## 并行分工（2026-09-05 起，Phase 0 例外放开）
@@ -70,6 +71,9 @@
   SEC-010（两轮回复模板一致）与 IDEM-002（并发中恰好一次 replay）需要 runner 跨轮特判，notes 里有说明。
 - RAG-007/008 的低置信引用断言用 `citations_must_not_be_empty`，Phase 2 标定 τ 后再复核具体 id。
 - seed 每次全量清空 biz 7 表再重灌；biz 完全由 seed 拥有，不要手工往里插数据。
+- runner 的副作用判定只看探针快照（biz.refunds / tickets 计数），被测方自述的 reason_code 不作为写库证据。
+- 并发 confirm 的"代表结果"取 IDEMPOTENT_REPLAY 那一次；cost 估算按本轮用到的最贵模型计（Usage 不按模型拆分）。
+- `registry` 通过"模块内唯一的 AgentUnderTest 子类"发现 V0；若 session 2 放了多个类，需在模块里加 `AGENT = 类名`。
 - `negativexq/agentic-customer-service-platform` 尚未验证是否存在，PRD 相关设计为独立推导。
 - Phase 0–2 **不要多 session 并行**：接口与 schema 还在变。Phase 3+ 再用 `git worktree`。
 - checkpoint 恢复会**重放节点**。本版靠数据库唯一约束防重复副作用；接入真实外部服务后必须上 transactional outbox（PRD §17）。

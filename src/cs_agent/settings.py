@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     anthropic_api_key: str = Field(default="", repr=False)
     llm_model_primary: str = "claude-sonnet-5"
     llm_model_fallback: str = "claude-haiku-4-5"
+    llm_model_judge: str = "claude-haiku-4-5"  # eval 的 LLM 评判只做语气与 groundedness
 
     # 数据库（ADR-0001：单实例双 schema）
     database_url: str = "postgresql+psycopg://cs_agent:cs_agent@localhost:5432/cs_agent"

@@ -21,3 +21,6 @@ htmlcov/
 .coverage
 eval_reports/*.json
 !eval_reports/.gitkeep
+
+# eval 报表：哑 agent 的带时间戳报表不入库，只保留 latest_*；真实版本（v0…v6）的报表全部入库
+eval_reports/*_dummy-*.md

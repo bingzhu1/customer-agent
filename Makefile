@@ -38,5 +38,7 @@ migrate:          ## 执行数据库迁移（Alembic，版本表在 agent schema
 seed:             ## 灌入 biz 种子数据（幂等，可重复执行）
 	uv run python -m cs_agent.seed.biz_seed
 
-eval:             ## 跑 golden dataset，输出报表（Phase 0 后续 milestone 接入）
-	@echo "TODO: uv run python -m cs_agent.eval"
+AGENT ?= dummy
+EVAL_ARGS ?=
+eval:             ## 跑 golden dataset，输出报表。例：make eval AGENT=v0 EVAL_ARGS="--judge"
+	uv run python -m cs_agent.eval --agent $(AGENT) $(EVAL_ARGS)
