@@ -78,6 +78,9 @@ def _install_test_env() -> str:
     os.environ["RAG_TAU_HIGH"] = str(FAKE_TAU_HIGH)
     # 环境里恰好有 key 也不许去打真实 embedding
     os.environ["OPENAI_API_KEY"] = ""
+    # 同理：测试起 app 时不预热，否则 lifespan 会真的调一次模型
+    os.environ["WARMUP_ON_STARTUP"] = "false"
+    os.environ["ANTHROPIC_API_KEY"] = ""
 
     get_settings.cache_clear()
     db_base.get_engine.cache_clear()

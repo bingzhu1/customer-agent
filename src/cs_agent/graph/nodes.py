@@ -50,6 +50,11 @@ from cs_agent.rag.rewrite import fallback_query
 #: 需要资格判定的意图。这些意图缺少 verdict 时矩阵会转人工，不会默认放行。
 ELIGIBILITY_INTENTS = frozenset({"refund_request"})
 
+#: 这些意图都以"某一张订单"为对象，缺订单号就得回头问用户（矩阵规则 15）。
+ORDER_SCOPED_INTENTS = frozenset(
+    {"order_status", "shipping_status", "refund_request", "refund_status", "payment_status"}
+)
+
 logger = get_logger(__name__)
 
 
@@ -161,6 +166,20 @@ def act(state: AgentState, deps: Deps) -> AgentState:
             # 订单确认属于本人后才查物流；查不到订单就不再追问物流（避免存在性泄露）
             shipping = deps.tools.get_shipping(u.order_id)
 
+    refunds: list[dict[str, Any]] = []
+    payments: list[dict[str, Any]] = []
+    profile: dict[str, Any] | None = None
+
+    # 只有订单确认属于本人后才查它的钱：查不到订单就到此为止，不泄露存在性
+    if order is not None and u.order_id is not None:
+        if u.intent in ("refund_status", "refund_request"):
+            refunds = deps.tools.get_refunds(u.order_id)
+        if u.intent == "payment_status":
+            payments = deps.tools.get_payments(u.order_id)
+
+    if u.intent == "membership_question":
+        profile = deps.tools.get_profile()
+
     if u.ticket_id is not None:
         ticket = deps.tools.get_ticket(u.ticket_id)
         if ticket is None:
@@ -174,7 +193,11 @@ def act(state: AgentState, deps: Deps) -> AgentState:
         base = u.policy_query or state.get("user_text", "")
         policy_hits = deps.tools.search_policy(fallback_query(base, known).query)
 
-    if u.intent in ("order_status", "shipping_status", "refund_request") and u.order_id is None:
+    if (
+        u.intent
+        in ("order_status", "shipping_status", "refund_request", "refund_status", "payment_status")
+        and u.order_id is None
+    ):
         missing_entity = True
     if u.intent == "ticket_status" and u.ticket_id is None:
         missing_entity = True
@@ -203,6 +226,9 @@ def act(state: AgentState, deps: Deps) -> AgentState:
         "shipping": shipping,
         "ticket": ticket,
         "policy_hits": policy_hits,
+        "refunds": refunds,
+        "payments": payments,
+        "profile": profile,
         "retrieval_max_score": retrieval.max_score if retrieval is not None else None,
         "retrieval_band": retrieval.band if retrieval is not None else None,
         # 有可引用 chunk 才允许低置信回答（§9.4 规则 14 约束 3），否则退回 14b 转人工
@@ -409,7 +435,7 @@ def _render_prompt(state: AgentState, citations: list[Citation]) -> str:
         lines += ["", hints]
 
     lines += ["", "可用事实（没有的不要编）："]
-    for key in ("order", "shipping", "ticket"):
+    for key in ("order", "shipping", "ticket", "refunds", "payments", "profile"):
         value = state.get(key)
         if value:
             lines.append(f"- {key}: {value}")

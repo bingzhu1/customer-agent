@@ -13,7 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from cs_agent.auth.context import AuthContext
-from cs_agent.db.models.biz import Order, OrderItem, Refund, Shipment, Ticket, User
+from cs_agent.db.models.biz import Order, OrderItem, Payment, Refund, Shipment, Ticket, User
 from cs_agent.domain.enums import RefundStatus, UserTier
 
 
@@ -50,6 +50,31 @@ class BizRepository:
             .join(Order, OrderItem.order_id == Order.id)
             .where(Order.id == order_id, Order.user_id == self._ctx.user_id)
             .order_by(OrderItem.id)
+        )
+        return list(self._session.scalars(stmt))
+
+    def get_profile(self) -> User | None:
+        """当前用户的档案。**没有 user_id 参数**：只能查自己（红线 1）。"""
+        stmt = select(User).where(User.id == self._ctx.user_id)
+        return self._session.scalars(stmt).one_or_none()
+
+    def list_refunds(self, order_id: int) -> list[Refund]:
+        """该订单的退款记录。订单不属于本人时返回空列表，与「订单不存在」不可区分。"""
+        stmt = (
+            select(Refund)
+            .join(Order, Refund.order_id == Order.id)
+            .where(Order.id == order_id, Order.user_id == self._ctx.user_id)
+            .order_by(Refund.id)
+        )
+        return list(self._session.scalars(stmt))
+
+    def list_payments(self, order_id: int) -> list[Payment]:
+        """该订单的支付记录。归属校验同上。"""
+        stmt = (
+            select(Payment)
+            .join(Order, Payment.order_id == Order.id)
+            .where(Order.id == order_id, Order.user_id == self._ctx.user_id)
+            .order_by(Payment.id)
         )
         return list(self._session.scalars(stmt))
 

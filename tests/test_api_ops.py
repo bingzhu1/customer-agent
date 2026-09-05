@@ -6,6 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from cs_agent.api.main import create_app
+from cs_agent.settings import get_settings
 
 
 @pytest.fixture(scope="module")
@@ -61,3 +62,19 @@ def test_metrics_labels_use_route_template(client: TestClient) -> None:
     """标签用路由模板而不是真实路径，否则带 id 的路径会撑爆标签基数。"""
     client.get("/health")
     assert 'endpoint="/health"' in client.get("/metrics").text
+
+
+def test_warmup_is_disabled_in_tests() -> None:
+    """测试环境不预热：否则每次起 app 都会真的调一次模型（conftest 里钉死）。"""
+    assert get_settings().warmup_on_startup is False
+    assert get_settings().llm_configured is False
+
+
+def test_warmup_survives_unavailable_dependencies() -> None:
+    """预热失败只记日志，不能让服务起不来——余额耗尽、DB 没起都属于这种情况。"""
+    from cs_agent.api.main import _warmup
+
+    broken = get_settings().model_copy(
+        update={"database_url": "postgresql+psycopg://nobody@127.0.0.1:1/none"}
+    )
+    _warmup(broken)  # 不抛异常即通过

@@ -230,3 +230,75 @@ def test_respond_prompt_carries_decision_and_no_identity(session: Session) -> No
     assert "decision:" in prompt
     assert "user_id" not in prompt
     assert str(MAIN_USER) not in prompt.split("可用事实")[0]
+
+
+# ---- ④ 三个新只读工具 ----
+
+
+@pytest.mark.parametrize("name", ["get_refunds", "get_payments", "get_profile"])
+def test_new_tool_signatures_have_no_identity_fields(name: str) -> None:
+    """FR-208：新工具同样不得出现身份字段；get_profile 干脆一个参数都没有。"""
+    params = set(inspect.signature(getattr(ToolBelt, name)).parameters) - {"self"}
+    assert not params & {"user_id", "tenant_id", "auth", "ctx"}
+    if name == "get_profile":
+        assert params == set()
+
+
+def test_get_refunds_returns_own_refund(session: Session) -> None:
+    """82922 是契约里那张已成功退款的订单。"""
+    refunds = _belt(session).get_refunds(82922)
+    assert refunds
+    assert refunds[0]["status"] == "succeeded"
+    # 本阶段退款是模拟执行的，回带 simulated 免得回复里说成真到账
+    assert refunds[0]["simulated"] is True
+
+
+def test_get_payments_returns_own_payment(session: Session) -> None:
+    payments = _belt(session).get_payments(82913)
+    assert payments
+    assert payments[0]["amount"] == "89.00"
+
+
+def test_money_tools_of_other_users_order_return_empty(session: Session) -> None:
+    """越权与不存在同样是空列表——不能靠"有没有记录"反推订单归属。"""
+    belt = _belt(session)
+    assert belt.get_refunds(90210) == []
+    assert belt.get_payments(90210) == []
+    assert belt.get_refunds(77777) == []
+
+
+def test_get_profile_returns_only_self(session: Session) -> None:
+    profile = _belt(session, MAIN_USER).get_profile()
+    assert profile is not None
+    assert profile["user_id"] == MAIN_USER
+    assert profile["tier"] == "standard"
+    # 邮箱不回带（§14.1 脱敏），也没必要进 prompt
+    assert "email" not in profile
+
+
+def test_gold_member_profile(session: Session) -> None:
+    profile = _belt(session, 102).get_profile()
+    assert profile is not None
+    assert profile["tier"] == "gold"
+
+
+def test_refund_status_intent_calls_get_refunds(session: Session) -> None:
+    """查退款进度：走 get_refunds，不发起新的退款判定。"""
+    state = _run(
+        session,
+        "我那笔退款到哪一步了？订单 82922。",
+        Understanding(intent="refund_status", order_id=82922),
+    )
+    called = [c.name for c in state["tool_calls"]]
+    assert "get_refunds" in called
+    assert state["refunds"]
+
+
+def test_money_tools_skipped_for_foreign_order(session: Session) -> None:
+    """订单查不到就到此为止，不再去查它的钱（避免存在性泄露）。"""
+    state = _run(
+        session,
+        "订单 90210 的退款到哪了？",
+        Understanding(intent="refund_status", order_id=90210),
+    )
+    assert [c.name for c in state["tool_calls"]] == ["get_order"]
