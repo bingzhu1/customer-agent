@@ -27,7 +27,7 @@ from uuid import UUID
 
 from cs_agent.auth.context import AuthContext
 from cs_agent.decision import templates
-from cs_agent.decision.matrix import Decision, DecisionInput
+from cs_agent.decision.matrix import DecisionInput
 from cs_agent.decision.matrix import decide as run_matrix
 from cs_agent.domain.enums import DecisionOutcome, ItemCategory, ItemCondition, ReasonCode
 from cs_agent.eval.protocol import Citation, Usage
@@ -273,6 +273,9 @@ def decide(state: AgentState, deps: Deps) -> AgentState:
             amount=amount,
             # 冲刺阶段不执行写操作：退款只走到"提议"，因此不是 write_intent，
             # 而是 eligibility_intent——矩阵仍会在通过时给 REQUIRE_CONFIRMATION 之前的那一格。
+            # FR-210 的超预算现在是矩阵规则 6b，不再在节点里事后钳位——
+            # 钳位读不出"为什么"，也没法被矩阵测试覆盖
+            tool_budget_exceeded=state.get("tool_budget_exceeded", False),
             is_write_intent=eligibility,
             is_eligibility_intent=eligibility,
             retrieval_max_score=state.get("retrieval_max_score"),
@@ -282,11 +285,6 @@ def decide(state: AgentState, deps: Deps) -> AgentState:
             missing_entity=state.get("missing_entity", False),
         )
     )
-    if state.get("tool_budget_exceeded"):
-        # FR-210：超预算强制进决策层，且不允许比矩阵结论更宽松
-        decision = _no_looser(
-            decision, DecisionOutcome.REQUIRE_HUMAN, ReasonCode.TOOL_BUDGET_EXCEEDED
-        )
     return {"decision": decision}
 
 
@@ -322,13 +320,6 @@ def respond(state: AgentState, deps: Deps) -> AgentState:
 
 
 # --- 辅助 ---------------------------------------------------------------------
-
-
-def _no_looser(current: Decision, outcome: DecisionOutcome, reason: ReasonCode) -> Decision:
-    """把结论收紧到不低于给定档位。DENY 已经更严，不覆盖。"""
-    if current.outcome is DecisionOutcome.DENY:
-        return current
-    return Decision(outcome, reason, current.rule_no)
 
 
 def _template_vars(
