@@ -32,6 +32,19 @@
 3. milestone 4：V0 naive baseline（裸 LLM，无工具无检索）接入 runner 实测，报表进版本库，Phase 0 收官开 PR
 4. Phase 0 的 DoD 见 PRD §15
 
+## 并行分工（2026-09-05 起，Phase 0 例外放开）
+
+共享接口 `src/cs_agent/eval/protocol.py` 已锁定；改它必须先在此处声明并通知所有 session。
+每个 worktree 用**独立数据库名**（seed 会清空 biz 表，alembic 版本表不能共用）。各分支只 push 不合并，合并顺序由 master 定。
+
+| session | 分支 / 目录 | 只能动的文件 | 数据库 |
+|---|---|---|---|
+| master（本 session） | `phase0-eval-foundation` / 主目录 | `src/cs_agent/eval/**`（protocol 除外，改动需声明）、`tests/test_eval_*`、Makefile 的 eval target、`eval_reports/`、PROGRESS / HANDOFF | `cs_agent` |
+| session 2：V0 baseline | `phase0-v0-baseline` / `../ca-v0` | `src/cs_agent/agents/__init__.py`、`agents/v0_naive.py`、`tests/test_v0_naive.py` | `cs_agent`（只读，不跑 seed） |
+| session 3：Phase 1 预备 | `phase1-skeleton` / `../ca-phase1` | `alembic/versions/0002_*.py`、`db/models/agent.py`（只追加）、`src/cs_agent/auth/**`、`src/cs_agent/repositories/**`、对应 tests | `cs_agent_p1` |
+
+合并顺序：V0 → phase0-eval-foundation → main（打 tag v0.1-phase0）→ phase1-skeleton rebase 到 main。
+
 ## 未决问题
 
 | # | 问题 | 等谁 |
