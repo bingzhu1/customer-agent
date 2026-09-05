@@ -51,6 +51,7 @@ prompt caching、记忆压缩与三方对比、人工控制台、混沌测试。
 - [~] rebase 到 `origin/phase0-eval-foundation`，解 settings / test_migrations / uv.lock 三处冲突
 - [ ] M3 `POST /v1/threads`、`GET /v1/threads/{id}`（他人 404，FR-101/104）
 - [~] M4 LangGraph 最小图 ingest→understand→act→policy_gate→decide→respond（`87b98e0`，MemorySaver）；Postgres checkpointer 推后
+  > 备注（2026-09-05）：Postgres checkpointer 可参考 embedease-ai `backend/app/core/db/checkpointer.py` 的 Provider 形状——`AsyncPostgresSaver` + `psycopg_pool` 懒加载、SQLite / Postgres 可切、单例 + `close()`。该仓库无 LICENSE，只借鉴设计，不复制代码。
 - [x] M5 4 个只读工具，签名无身份字段（FR-208），不可信包装（FR-209），单轮预算（FR-210）· `87b98e0`；search_policy 为关键词占位，Phase 2 替换
 - [ ] M6 中间件：request_id / 限流 429（FR-806）/ 超时；Langfuse trace（FR-902）；prompt caching（FR-911）；分节点 effort（FR-912）
 - [ ] M7 实现 `AgentUnderTest` 接线 → `make eval AGENT=v1`，报表入库，对照 V0
@@ -101,6 +102,7 @@ prompt caching、记忆压缩与三方对比、人工控制台、混沌测试。
 - [~] M3 `RefundService(SIMULATED)`（FR-506）+ `audit_log` 追加式（FR-507）+ 重试幂等（FR-508）—— P3，与 M1 一起
 - [ ] M4 `escalate_to_human` 创建 human_review 并中断（FR-206）；`create_ticket`（FR-205，P1）
 - [ ] M5 SSE 事件协议 v1（FR-103，§8.3）
+  > 备注（2026-09-05）：事件命名与 payload 可参考 embedease-ai `backend/app/schemas/events.py`——按命名空间分层（`meta.start` / `tool.start` / `tool.end` / `assistant.final` / `model.fallback`），每个事件配 TypedDict payload；前端消费侧参考其 `frontend/packages/chat-sdk/src/timeline/reducer.ts`（纯 reducer 把事件流折成时间线，可脱离浏览器测试）。我方 §8.3 的 `requires_confirmation` / `requires_human` 是终结事件，这一点保留。同样只借鉴设计。
 - [ ] M6 outbox 升级点写入 PRD §17（FR-509）；`make eval AGENT=v4`
 
 **DoD**
@@ -144,6 +146,7 @@ prompt caching、记忆压缩与三方对比、人工控制台、混沌测试。
 - [ ] `protocol.TurnResult.retrieved` 字段 —— Phase 2 前
 - [ ] `protocol.Usage` 逐次调用列表 —— Phase 6 前
 - [ ] `tests/test_api_auth.py` 不应依赖 `.env` 的 `JWT_SECRET`，应在 fixture 里覆盖 settings —— P1 顺手修
+- [ ] 前端范围：PRD §2 只要求"最小调试页"（Phase 6）；用户 2026-09-05 提出要做前端，范围 / 技术栈 / 所属 Phase 待拍板。可借鉴 embedease-ai `frontend/packages/chat-sdk`（fetch 流 + AbortController + 纯 timelineReducer）与 `frontend/app/support` 客服工作台（热度排序、接管）的设计；其管理后台 / 嵌入组件 / 商品卡片与我方无关
 - [ ] Phase 0–2 单窗口规则（CLAUDE.md §9.1）已被"文件不相交 + 接口先锁"的方式放开，是否改写 CLAUDE.md —— 用户决定
 
 ## 偏离记录（计划外的事，先记后做）
