@@ -69,6 +69,9 @@ class Row:
     query: str
     #: 实际送去检索的 query。不开 --rewrite 时与 `query` 相同。
     search_query: str
+    #: 改写来源：`llm` / `fallback`（模型不可用时的确定性兜底）/ `-`（未开改写）。
+    #: 这一列是防呆用的：改写降级时脚本不报错，只有它能看出这轮数据不能用。
+    rewrite_source: str
     max_score: float
     top_policy_id: str
     band: str
@@ -110,10 +113,12 @@ def collect(provider: EmbeddingProvider, top_k: int, *, rewrite: bool = False) -
     for case in sorted(cases, key=lambda c: c.id):
         query = next((t.user for t in case.turns if t.user), "")
         search_query = query
+        source = "-"
         if rewrite:
             # golden 是单轮用例，没有前序工具结果，CaseFacts 只能是空的
             rewritten: RewrittenQuery = rewrite_query(query, CaseFacts())
             search_query = rewritten.query
+            source = rewritten.source
         result = retriever.search(search_query)
         rows.append(
             Row(
@@ -121,6 +126,7 @@ def collect(provider: EmbeddingProvider, top_k: int, *, rewrite: bool = False) -
                 label=label_of(case),
                 query=query,
                 search_query=search_query,
+                rewrite_source=source,
                 max_score=result.max_score,
                 top_policy_id=result.chunks[0].policy_id if result.chunks else "-",
                 band=classify_band(result.max_score, settings.rag_tau_low, settings.rag_tau_high),
@@ -132,21 +138,33 @@ def collect(provider: EmbeddingProvider, top_k: int, *, rewrite: bool = False) -
 def render(rows: list[Row], provider_name: str, top_k: int, *, rewrite: bool = False) -> str:
     settings = get_settings()
     mode = "查询改写：开（FR-302）" if rewrite else "查询改写：关（原句直接检索）"
+    degraded = [r for r in rows if r.rewrite_source == "fallback"]
     out = [
         f"# τ 标定分布（provider={provider_name}, top_k={top_k}, 用例={len(rows)}）",
         "",
+    ]
+    if degraded:
+        # 改写降级时 rewrite_query 按设计静默回退到确定性拼接，分数表照常输出但测的是原句。
+        # 不打这条横幅，很容易把降级数据当真数据回填 ADR-0007。
+        out += [
+            f"> ⚠️ **本轮含降级，τ 不可采用。** {len(degraded)}/{len(rows)} 条查询改写"
+            "回退到了确定性兜底（`fallback`），实际检索用的是原句而不是改写后的 query。"
+            "常见原因：Anthropic 余额不足或网络不可达。请修好后重跑。",
+            "",
+        ]
+    out += [
         mode,
         "",
         f"当前配置：τ_low={settings.rag_tau_low} τ_high={settings.rag_tau_high}"
         "（下表 `当前分带` 按此计算）",
         "",
-        "| 用例 | 样本类型 | max_score | top policy | 当前分带 | 送检索的 query |",
-        "|---|---|---:|---|---|---|",
+        "| 用例 | 样本类型 | max_score | top policy | 当前分带 | 改写来源 | 送检索的 query |",
+        "|---|---|---:|---|---|---|---|",
     ]
     for r in rows:
         out.append(
             f"| {r.case_id} | {LABEL_TEXT[r.label]} | {r.max_score:.4f} | "
-            f"{r.top_policy_id} | {r.band} | {r.search_query} |"
+            f"{r.top_policy_id} | {r.band} | {r.rewrite_source} | {r.search_query} |"
         )
 
     groups: dict[Label, list[float]] = {}
@@ -190,6 +208,20 @@ def render(rows: list[Row], provider_name: str, top_k: int, *, rewrite: bool = F
     if low_scores:
         inside = [s for s in low_scores if tau_low <= s < tau_high]
         out.append(f"- 低置信用例落在建议带内的：{len(inside)}/{len(low_scores)}")
+    if rewrite:
+        ratio = len(degraded) / len(rows) * 100 if rows else 0.0
+        out += [
+            "",
+            "## 改写健康度",
+            "",
+            f"- `llm`：{len(rows) - len(degraded)}/{len(rows)}　"
+            f"`fallback`（降级）：{len(degraded)}/{len(rows)}（{ratio:.0f}%）",
+        ]
+        out.append(
+            "- ⚠️ 含降级，上面的分数与建议值**都不可采用**，修好模型调用后重跑。"
+            if degraded
+            else "- 全部走了模型改写，本轮数据可用。"
+        )
     out += [
         "",
         "> 本脚本只给建议值，不改 `settings.py`；最终取值由人拍板并写进 ADR-0007 附录。",
