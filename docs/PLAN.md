@@ -114,7 +114,7 @@ prompt caching、记忆压缩与三方对比、人工控制台、混沌测试。
 - [ ] M5 SSE 事件协议 v1（FR-103，§8.3）
   > 备注（2026-09-05）：事件命名与 payload 可参考 embedease-ai `backend/app/schemas/events.py`——按命名空间分层（`meta.start` / `tool.start` / `tool.end` / `assistant.final` / `model.fallback`），每个事件配 TypedDict payload；前端消费侧参考其 `frontend/packages/chat-sdk/src/timeline/reducer.ts`（纯 reducer 把事件流折成时间线，可脱离浏览器测试）。我方 §8.3 的 `requires_confirmation` / `requires_human` 是终结事件，这一点保留。同样只借鉴设计。
 - [ ] M6 outbox 升级点写入 PRD §17（FR-509）；`make eval AGENT=v4`
-- [ ] M7 前端对话页（demo 级）：`web/` 目录 Vite + React + TS，无组件库；fetch 读 SSE + AbortController，纯 `timelineReducer` 折事件为时间线并单测；页面显式渲染 decision / reason_code / 引用 / 确认按钮（打 `POST /v1/actions/{id}/confirm`）。不做：登录页（token 粘贴框即可）、主题、富文本、历史会话列表
+- [ ] M7 前端对话页（demo 级）：`frontend/` 目录（与冲刺第二轮表一致）Vite + React + TS，无组件库；fetch 读 SSE + AbortController，纯 `timelineReducer` 折事件为时间线并单测；页面显式渲染 decision / reason_code / 引用 / 确认按钮（打 `POST /v1/actions/{id}/confirm`）。不做：登录页（token 粘贴框即可）、主题、富文本、历史会话列表
 
 **DoD**
 - [ ] 重复退款 = 0（IDEM-001/002 通过）；审计日志能回答"谁、何时、依据哪条规则、结果如何"
@@ -143,7 +143,7 @@ prompt caching、记忆压缩与三方对比、人工控制台、混沌测试。
 - [ ] M3 Prometheus + Grafana 面板（FR-903/910）；成本与延迟 SLO；`Usage` 改为逐次调用列表以按模型拆成本
 - [ ] M4 故障注入测试（关 pgvector / LLM 超时 / 连续失败）
 - [ ] M5 `make eval AGENT=v6` 全表；README 含 V0→V6 演进表、架构图、"真正上线还缺什么"
-- [ ] M6 前端审批页（demo 级）：复用 `web/`，一张 human-review 队列表 + approve / edit / reject 三个按钮，操作后回到对话页看恢复结果。不做：热度排序、通知、多客服在线状态
+- [ ] M6 前端审批页（demo 级）：复用 `frontend/`，一张 human-review 队列表 + approve / edit / reject 三个按钮，操作后回到对话页看恢复结果。不做：热度排序、通知、多客服在线状态
 
 **DoD**
 - [ ] 混沌测试通过；$0.05/session 成本门槛实测（不达标则修订目标并说明原因）
