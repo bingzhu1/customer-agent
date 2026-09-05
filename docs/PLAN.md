@@ -129,8 +129,8 @@ prompt caching、记忆压缩与三方对比、人工控制台、混沌测试。
 ## Phase 5 — 记忆：CaseFacts + 压缩 + 长期记忆 · 未开始
 
 - [x] M1 强类型 `CaseFacts` + 纯函数更新器 + `case_state` repo（FR-701/702）· `c771c27`（接入图 —— P1）
-- [ ] M2 token 阈值触发叙述压缩，CaseFacts / pending_action 不参与（FR-703）
-- [~] M3 `user_memory` repo + Haiku 抽取（同步版）+ 注入标注非权威（FR-705/706/708）· `c771c27`；异步化（FR-704）推后
+- [x] M2 叙述压缩纯函数 `memory/compaction.py`（FR-703，CaseFacts / pending_action 不参与）· `d13c042`（接入 compress 节点 —— P1）
+- [x] M3 `user_memory` repo + Haiku 抽取 + 注入标注非权威（FR-705/706/708）· `c771c27`；异步抽取队列 `memory/jobs.py`（FR-704，进程内线程池）· `ed71dbb`
 - [x] M4 记忆投毒测试 10 条（FR-707，红线 3）· `c771c27`
 - [ ] M5 三方对比实验 A/B/C（§12.5），图表进 README；`make eval AGENT=v5`
 
