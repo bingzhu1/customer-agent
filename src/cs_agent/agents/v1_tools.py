@@ -30,11 +30,13 @@ from cs_agent.eval.protocol import AgentSession, AgentUnderTest, TurnResult, Usa
 from cs_agent.eval.schema import Auth, ToolFault
 from cs_agent.graph.build import build_graph
 from cs_agent.graph.llm import FallbackLlm, Llm
+from cs_agent.graph.memory_store import InMemoryCaseFactsStore
 from cs_agent.graph.nodes import Deps
 from cs_agent.graph.state import AgentState
 from cs_agent.graph.tools import ToolBelt
+from cs_agent.memory.user_memory import UserMemoryRepo
 from cs_agent.policy.schema import PolicySet, load_policies
-from cs_agent.rag.provider import default_retriever
+from cs_agent.rag.provider import default_provider, default_retriever
 from cs_agent.rag.retriever import PolicyRetriever
 from cs_agent.repositories.biz import BizRepository
 from cs_agent.settings import get_settings
@@ -65,6 +67,8 @@ class GraphSession(AgentSession):
         retriever: PolicyRetriever,
         llm: Llm | FallbackLlm,
         enable_policy_gate: bool,
+        enable_memory: bool,
+        memory: UserMemoryRepo | None,
         thread_id: str,
     ) -> None:
         self._db = db
@@ -76,6 +80,10 @@ class GraphSession(AgentSession):
             now=now,
             auth=auth,
             enable_policy_gate=enable_policy_gate,
+            # eval 的会话没有 agent.threads 行，CaseFacts 只能进程内保存
+            case_store=InMemoryCaseFactsStore(),
+            memory=memory,
+            enable_memory_write=enable_memory,
         )
         self._graph = build_graph(self._deps)
         self._thread_id = thread_id
@@ -153,6 +161,8 @@ class GraphAgent(AgentUnderTest):
 
     name = "graph"
     enable_policy_gate = False
+    #: 长期记忆的读写。V1 / V3 关着，V5 打开——这样报表上那一格差异才归因得清楚。
+    enable_memory = False
 
     def __init__(
         self,
@@ -160,10 +170,12 @@ class GraphAgent(AgentUnderTest):
         *,
         policies: PolicySet | None = None,
         retriever: PolicyRetriever | None = None,
+        memory: UserMemoryRepo | None = None,
     ) -> None:
         self._llm = llm
         self._policies = policies
         self._retriever = retriever
+        self._memory = memory
         self._session_seq = 0
 
     def _ensure_llm(self) -> Llm | FallbackLlm:
@@ -184,6 +196,14 @@ class GraphAgent(AgentUnderTest):
             self._retriever = default_retriever()
         return self._retriever
 
+    def _ensure_memory(self) -> UserMemoryRepo | None:
+        """只有开了记忆的版本才建仓库：省掉 V1 / V3 不必要的 provider 初始化。"""
+        if not self.enable_memory:
+            return None
+        if self._memory is None:
+            self._memory = UserMemoryRepo(default_provider())
+        return self._memory
+
     def start_session(self, auth: Auth, *, now: datetime) -> AgentSession:
         """身份在这里注入一次，之后不再传递（红线 1）。"""
         self._session_seq += 1
@@ -196,6 +216,8 @@ class GraphAgent(AgentUnderTest):
             retriever=self._ensure_retriever(),
             llm=self._ensure_llm(),
             enable_policy_gate=self.enable_policy_gate,
+            enable_memory=self.enable_memory,
+            memory=self._ensure_memory(),
             thread_id=f"{self.name}-{self._session_seq}",
         )
 

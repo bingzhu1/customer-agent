@@ -1,6 +1,6 @@
 """图装配（ADR-0003）。
 
-线性图：ingest → understand → act → policy_gate → decide → respond。
+线性图：ingest → understand → act → policy_gate → decide → respond → persist。
 没有条件边——**流程本身不该由模型决定**，节点内部的分支都是确定性的。
 
 checkpointer 冲刺阶段用 `MemorySaver`：进程内保存，够跑 eval 与本地联调。
@@ -16,7 +16,16 @@ from typing import Any
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 
-from cs_agent.graph.nodes import Deps, act, decide, ingest, policy_gate, respond, understand
+from cs_agent.graph.nodes import (
+    Deps,
+    act,
+    decide,
+    ingest,
+    persist,
+    policy_gate,
+    respond,
+    understand,
+)
 from cs_agent.graph.state import AgentState
 
 NODES = (
@@ -26,6 +35,8 @@ NODES = (
     ("policy_gate", policy_gate),
     ("decide", decide),
     ("respond", respond),
+    # persist 在最后：写 CaseFacts / 长期记忆失败都不该影响已经生成好的回复
+    ("persist", persist),
 )
 
 

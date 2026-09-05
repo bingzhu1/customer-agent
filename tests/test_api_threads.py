@@ -251,3 +251,16 @@ def test_no_pending_action_when_denied(client: TestClient) -> None:
     ).json()
     assert body["decision"] == "DENY"
     assert body["pending_action"] is None
+
+
+def test_case_facts_are_persisted_across_turns(client: TestClient) -> None:
+    """⑤ 接线的端到端证据：CaseFacts 真的写进了 agent.case_state，第 2 轮读得到。"""
+    thread_id, headers = _new_thread(client)
+    client.post(
+        f"/v1/threads/{thread_id}/messages",
+        headers=headers,
+        json={"message": "订单 82913 现在什么状态？"},
+    )
+    body = client.get(f"/v1/threads/{thread_id}", headers=headers).json()
+    assert body["case_facts"]["order_ids"] == [82913]
+    assert body["case_facts"]["last_updated_by"].startswith("tool:")
