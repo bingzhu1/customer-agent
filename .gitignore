@@ -1,0 +1,23 @@
+# 环境与密钥
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
+
+# 工具与产物
+.DS_Store
+.idea/
+.vscode/
+htmlcov/
+.coverage
+eval_reports/*.json
+!eval_reports/.gitkeep
