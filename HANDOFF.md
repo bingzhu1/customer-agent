@@ -9,24 +9,35 @@
 
 ## 当前状态
 
-- **Phase**：Phase 0 已合入 `main`（tag `v0.1-phase0`）；Phase 3 引擎 + 矩阵已合入 `main`；**3 小时冲刺进行中**，分工见 `docs/PLAN.md` 顶部
-- **分支**：`phase0-eval-foundation`（从 `main` 切出，尚未开 PR）
+- **Phase**：Phase 0 与 Phase 3（策略引擎 + 决策矩阵）已在 `main`；本分支做 Phase 1，**3 小时冲刺进行中**，分工见 `docs/PLAN.md` 顶部
+- **分支**：`phase1-skeleton`（worktree `~/Desktop/ca-phase1`），已 rebase 到 `origin/main`
 - **最新 commit**：见 `git log -1`
 - **仓库**：https://github.com/bingzhu1/customer-agent （public）
-- **模型**：本 session 为 Fable 5.1，上一 session 的模型切换问题已不存在
+- **数据库**：本 worktree 用**独立库 `cs_agent_p1`**（`.env` 中 DATABASE_URL 已指向它）。**不要改回 `cs_agent`。**
+  库是手工建的（`CREATE DATABASE cs_agent_p1` + `CREATE EXTENSION vector` + biz/agent 两个 schema）；
+  迁移往返测试用的一次性库由 `tests/test_migrations.py` 按 worktree 路径哈希自建自删。
 
-## Phase 0 收官产物
+## 本分支已交付（Phase 1 milestone 1–2）
 
-- eval runner（milestone 3）+ V0 naive baseline（session 2 交付，已合入）
-- V0 实测：1/54，硬门槛 FAIL，tokens/session 2782，$0.011/session；报表 `eval_reports/latest_v0-naive.md`，
-  分析 `docs/eval/v0-baseline.md`（五类典型错误 + 记忆指标的反直觉说明）
-- 首次跑有 5 条 APIConnectionError，已删报表重跑，第二次 54 条零异常（eval_run_id 4）
+- `alembic/versions/0002_agent_platform.py` + `db/models/agent.py`：PRD §7.3 其余 10 张 agent 表
+  （UNIQUE(idempotency_key)、policy_chunks 版本唯一键；向量列 Text 占位，Phase 2 换 pgvector）
+- `auth/context.py`（`AuthContext(user_id, roles)`）+ `auth/jwt.py`（HS256，显式 algorithms 防 alg 混淆）
+- `repositories/biz.py`：`get_order / get_shipping / get_ticket` 强制 `WHERE user_id = ctx.user_id`，
+  他人与不存在**一律返回 None**（FR-804）
+- `api/`：`main.py` 只做装配；middleware 顺序 request_id → 指标 → 认证；`errors.py` 是 §8.4 统一信封；
+  `routes/ops.py`（/health /ready /metrics）、`routes/v1.py`（目前只有 `GET /v1/whoami`）
+- `observability/`：structlog + Prometheus 指标
+- `make serve` 起服务、`make token USER=101` 签调试 token
 
 ## 下一步要做什么
 
-1. 用户合 PR → master 拉 main 打 tag `v0.1-phase0` → 通知 Phase 1 / Phase 3 各做 `git rebase main`
-2. master 职责转为：审各 session 交付、合并、跑 `make test` + `make eval` 看回归；V1 落地后 `make eval AGENT=v1` 对照 V0
-3. Phase 3（策略引擎 + 决策层）交付后审 `PolicyFacts` / `DecisionInput` 接口并定稿，供 Phase 1 接线
+1. 冲刺第一段：LangGraph 最小图 ingest→understand→act→decide→respond（checkpointer 先用 MemorySaver）
+   + 4 个只读工具（search_policy 暂为关键词匹配，非真 RAG）
+2. 冲刺第二段：`agents/v1_tools.py` 实现 `AgentUnderTest`，registry 加 `v1`，跑 `make eval AGENT=v1`，
+   目标 authorization violation = 0
+3. 冲刺第三段：decide 调 `decision.matrix.decide`，policy_gate 用 Repository 实时查事实构造 `PolicyFacts`
+   后调 `policy.engine.evaluate`；`agents/v3_policy.py`，registry 加 `v3`，跑 `make eval AGENT=v3`
+4. 冲刺不做：SSE、Langfuse、限流、prompt caching、写操作执行；`POST /v1/threads` 等 REST 接口也押后
 
 ## 并行分工（2026-09-05 起，Phase 0 例外放开）
 
@@ -61,6 +72,12 @@
 - 单会话成本目标 **$0.05 维持**；Phase 6 前只记录不考核（原未决问题 2）
 - 主模型 Claude Sonnet 5（`claude-sonnet-5`），降级 Claude Haiku 4.5（`claude-haiku-4-5`）
 - Docker 运行时用 colima 而非 Docker Desktop（无需 sudo、无 GUI）
+- `GET /v1/whoami` **保留**，master session 已补进 PRD §8.1（v1.1，在 phase0 分支上）
+- **合并顺序**：V0 交付 → `phase0-eval-foundation` → `main`（tag `v0.1-phase0`）→ 本分支再 rebase 到 main。
+  合并时 `tests/test_migrations.py` 以 master 的一次性库（`cs_agent_test`）版为准；
+  `uv.lock` 不手工合，合并后重跑 `uv sync` 重新生成
+- `AgentUnderTest` 接口已在 phase0 分支定稿（`ba08ac8`）：**同步**接口；
+  runner 对并发 confirm 用线程池，async 实现要自持事件循环并保证线程安全
 
 ## 已知坑
 
@@ -82,3 +99,21 @@
 - `negativexq/agentic-customer-service-platform` 尚未验证是否存在，PRD 相关设计为独立推导。
 - Phase 0–2 **不要多 session 并行**：接口与 schema 还在变。Phase 3+ 再用 `git worktree`。
 - checkpoint 恢复会**重放节点**。本版靠数据库唯一约束防重复副作用；接入真实外部服务后必须上 transactional outbox（PRD §17）。
+- Phase 1 的 agent 表**不向 biz 表建外键**（`threads.user_id` 只是普通整数列）：
+  跨 schema 耦合会把两套系统绑死，归属校验由 Repository 层负责。
+- `policy_chunks` 的 `metadata` 列在模型里叫 `chunk_metadata`：`metadata` 是 DeclarativeBase 保留名。
+- `memory_embeddings.embedding` / `policy_chunks.embedding` 现在是 **Text 占位**，
+  Phase 2 换 pgvector `vector(1536)` 并建 HNSW 索引，届时需要一次 ALTER 迁移。
+- Phase 0 的 milestone 3（eval runner）与 milestone 4（V0 baseline）**尚未完成**，
+  Phase 0 未开 PR；Phase 1 先行，最后一并合入。
+- `GET /v1/whoami` 是本分支加的**认证自检接口**；用户已拍板保留，PRD §8.1 v1.1 已补上。
+- 中间件里**不能 raise `ApiError`**：异常处理器挂在更内层，中间件抛出的异常会直接变 500，
+  必须 `return error_response(...)`。
+- `BaseHTTPMiddleware` 的 `call_next` 在独立 task 里跑，内层绑的 contextvars 传不回外层，
+  所以访问日志的 `request_id` / `user_id` 是显式传参而不是靠 contextvars。
+- `structlog.testing.capture_logs()` 会丢掉 `merge_contextvars`，测日志字段要断言显式传的参数。
+- Prometheus 指标必须定义在模块顶层（默认 registry 只能注册一次），
+  否则 `create_app()` 被测试多次调用会抛重复注册。
+- rebase 后**两个"回填 commit hash"的 commit 被 skip 了**（hash 已变，重填没意义），
+  PROGRESS 里 Phase 1 的 hash 是 rebase 后的新值：milestone 1 = `6eb8984`、milestone 2 = `4942f73`。
+- 迁移往返测试现在跑在一次性库 `cs_agent_test` 上（phase0 的做法），不再动开发库 `cs_agent_p1`。
