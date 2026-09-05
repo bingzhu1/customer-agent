@@ -126,6 +126,33 @@ export interface ThreadMessage {
   created_at: string
 }
 
+/**
+ * `POST /v1/actions/{id}/confirm` 的响应。
+ *
+ * **注意它不是 §8.2 的 MessageResponse**——没有 reply / decision / citations，
+ * 是一份执行回执：动作状态 + 幂等标记 + 业务结果。
+ */
+export interface ConfirmActionResponse {
+  action_id: number
+  /** succeeded / rejected / failed …（后端 agent_actions.status） */
+  status: string
+  reason_code: ReasonCode
+  /** true 表示这次没有产生新的副作用，返回的是上一次的结果（FR-504） */
+  replay: boolean
+  result: ActionResult | null
+  request_id: string | null
+}
+
+/** 动作执行结果。字段随动作类型变化，退款给的是这几项。 */
+export interface ActionResult {
+  refund_id?: number
+  amount?: string
+  status?: string
+  /** 退款是模拟执行的（RefundService SIMULATED），界面上要如实说明 */
+  simulated?: boolean
+  [key: string]: unknown
+}
+
 export interface WhoAmI {
   user_id: number
   roles: string[]
@@ -197,5 +224,9 @@ export interface ApiClient {
   createThread(signal?: AbortSignal): Promise<ThreadCreated>
   sendMessage(threadId: string, text: string, signal?: AbortSignal): Promise<MessageResponse>
   getThread(threadId: string, signal?: AbortSignal): Promise<ThreadDetail>
-  confirmAction(actionId: string, confirm: boolean, signal?: AbortSignal): Promise<MessageResponse>
+  confirmAction(
+    actionId: string,
+    confirm: boolean,
+    signal?: AbortSignal,
+  ): Promise<ConfirmActionResponse>
 }

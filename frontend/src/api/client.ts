@@ -7,7 +7,13 @@
  */
 
 import { ApiError, type ApiClient, type ApiCapabilities, type ErrorEnvelope } from './types'
-import type { MessageResponse, ThreadCreated, ThreadDetail, WhoAmI } from './types'
+import type {
+  ConfirmActionResponse,
+  MessageResponse,
+  ThreadCreated,
+  ThreadDetail,
+  WhoAmI,
+} from './types'
 
 export interface HttpClientOptions {
   baseUrl: string
@@ -128,8 +134,9 @@ export function createHttpClient(options: HttpClientOptions): ApiClient {
     getThread: (threadId, signal) =>
       request<ThreadDetail>(`/v1/threads/${encodeURIComponent(threadId)}`, { signal }),
 
+    // 响应是执行回执 ConfirmActionResponse，不是 §8.2 的对话响应
     confirmAction: (actionId, confirm, signal) =>
-      request<MessageResponse>(`/v1/actions/${encodeURIComponent(actionId)}/confirm`, {
+      request<ConfirmActionResponse>(`/v1/actions/${encodeURIComponent(actionId)}/confirm`, {
         method: 'POST',
         body: { confirm },
         signal,

@@ -10,6 +10,7 @@ import type { ApiClient, WhoAmI } from '../api/types'
 import Icon from '../components/Icon'
 import JudgmentPanel from '../components/JudgmentPanel'
 import Sidebar from '../components/Sidebar'
+import ActionResultItem from '../timeline/ActionResultItem'
 import AssistantFinalItem from '../timeline/AssistantFinalItem'
 import { DECISION_STYLE } from '../timeline/decision'
 import ErrorItem from '../timeline/ErrorItem'
@@ -124,6 +125,8 @@ export default function Chat({ client, identity, ws, onLogout }: Props) {
                   return <WaitingItem key={item.id} hint={item.hint} />
                 case 'error':
                   return <ErrorItem key={item.id} error={item.error} onRetry={thread ? () => ws.retry(thread.id) : undefined} />
+                case 'action':
+                  return <ActionResultItem key={item.id} result={item.result} />
                 case 'assistant':
                   return (
                     <AssistantFinalItem

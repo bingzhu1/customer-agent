@@ -168,6 +168,8 @@ const sleep = (ms: number, signal?: AbortSignal) =>
 export function createMockClient(): ApiClient {
   let threadId = ''
   const history: ThreadDetail['messages'] = []
+  /** 已确认过的动作 id，用来演示幂等重放 */
+  const confirmed = new Set<string>()
 
   return {
     capabilities: { devToken: true, confirm: true, getThread: true },
@@ -215,21 +217,26 @@ export function createMockClient(): ApiClient {
 
     async confirmAction(actionId, confirm, signal) {
       await sleep(500, signal)
-      const result = confirm
-        ? makeResponse({
-            thread_id: threadId,
-            reply: `退款已提交（动作 ${actionId}），预计 3–5 个工作日原路退回。`,
-            reason_code: 'IDEMPOTENT_REPLAY',
-            tools_used: ['request_refund'],
-          })
-        : makeResponse({
-            thread_id: threadId,
-            reply: '已取消本次退款申请，订单保持原状。',
-            citations: [],
-            tools_used: [],
-          })
-      history.push({ role: 'assistant', content: result.reply, created_at: new Date().toISOString() })
-      return result
+      // 同一个动作确认第二次不再产生副作用，返回上一次的结果（FR-504）
+      const replay = confirmed.has(actionId)
+      confirmed.add(actionId)
+      return confirm
+        ? {
+            action_id: Number(actionId.replace(/\D/g, '')) || 166,
+            status: 'succeeded',
+            reason_code: replay ? 'IDEMPOTENT_REPLAY' : 'POLICY_SATISFIED',
+            replay,
+            result: { refund_id: 9002, amount: '89.00', status: 'succeeded', simulated: true },
+            request_id: nextId('req'),
+          }
+        : {
+            action_id: Number(actionId.replace(/\D/g, '')) || 166,
+            status: 'rejected',
+            reason_code: 'OK',
+            replay: false,
+            result: null,
+            request_id: nextId('req'),
+          }
     },
   }
 }
