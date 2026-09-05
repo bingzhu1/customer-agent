@@ -1,4 +1,4 @@
-/** 用户发出的消息。 */
+/** 用户发出的消息：右对齐的浅色块。 */
 
 interface Props {
   text: string
@@ -6,8 +6,8 @@ interface Props {
 
 export default function UserMessageItem({ text }: Props) {
   return (
-    <div className="turn user">
-      <div className="bubble user-bubble">{text}</div>
+    <div className="turn turn-user">
+      <div className="user-msg">{text}</div>
     </div>
   )
 }
