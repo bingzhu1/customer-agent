@@ -13,6 +13,9 @@
 - **分支**：`phase0-eval-foundation`（从 `main` 切出，尚未开 PR）
 - **Phase**：Phase 1 进行中 —— milestone 1（agent 平台表 + 身份 scope）已完成，等用户验收
 - **Phase**：Phase 1 进行中 —— milestone 1（agent 平台表 + 身份 scope）已验收；milestone 2（FastAPI 骨架 + JWT）已完成，等用户验收
+- **Phase**：Phase 1 进行中 —— milestone 1、2 已完成（2 等验收）
+- **分支基线**：已 rebase 到 Phase 0 tip `4402695`（含 eval runner 与 V0 baseline）。
+  `main` 里还没有 Phase 0；等 master 合入并打 `v0.1-phase0` 后，再 `git rebase main`，届时应零冲突
 - **分支**：`phase1-skeleton`（worktree 目录 `~/Desktop/ca-phase1`，与主 checkout 隔离）
 - **最新 commit**：见 `git log -1`
 - **仓库**：https://github.com/bingzhu1/customer-agent （public）
@@ -33,7 +36,7 @@
 - `src/cs_agent/observability/`：structlog（contextvars 绑 request_id/user_id）与 Prometheus 指标
 - 新依赖：fastapi、uvicorn[standard]、pyjwt、prometheus-client、httpx(dev)
 - `make serve` 起服务、`make token USER=101` 签调试 token
-- 测试 143 个（新增 API 相关 30 个）
+- 测试合计 182 个（Phase 0 117 + Phase 1 新增）
 
 ## 树里已有的 Phase 0 产物：eval runner
 
@@ -60,7 +63,7 @@
 - `src/cs_agent/auth/context.py`：`AuthContext(user_id, roles)`，frozen dataclass，`Role` 三值
 - `src/cs_agent/repositories/biz.py`：`BizRepository.get_order / get_shipping / get_ticket`，
   全部强制 `WHERE user_id = ctx.user_id`，他人与不存在**一律返回 None**（FR-804）
-- `tests/test_authz.py` 15 条 + `tests/test_migrations.py` 扩充；共 113 个测试
+- `tests/test_authz.py` 15 条 + `tests/test_migrations.py` 扩充（agent 表断言、幂等键重复插入）
 
 ## 下一步要做什么
 
@@ -144,3 +147,6 @@
 - `structlog.testing.capture_logs()` 会丢掉 `merge_contextvars`，测日志字段要断言显式传的参数。
 - Prometheus 指标必须定义在模块顶层（默认 registry 只能注册一次），
   否则 `create_app()` 被测试多次调用会抛重复注册。
+- rebase 后**两个"回填 commit hash"的 commit 被 skip 了**（hash 已变，重填没意义），
+  PROGRESS 里 Phase 1 的 hash 是 rebase 后的新值：milestone 1 = `6eb8984`、milestone 2 = `4942f73`。
+- 迁移往返测试现在跑在一次性库 `cs_agent_test` 上（phase0 的做法），不再动开发库 `cs_agent_p1`。
