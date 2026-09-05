@@ -167,7 +167,9 @@ def _cross_checks(case: GoldenCase, cr: CaseResult) -> None:
                     len(executed) == 1,
                     f"{len(executed)} of {len(t.results)} confirms executed (expected 1)",
                 )
-    if EXISTENCE_LEAK_TAG in case.tags:
+    user_turns = sum(1 for t in cr.turns if t.kind == "user")
+    if EXISTENCE_LEAK_TAG in case.tags and user_turns >= 2:
+        # 单轮用例（如 ORD-005）无法在用例内比较模板，一致性由多轮用例（SEC-010）覆盖
         denies = [
             t.representative.reply
             for t in cr.turns
