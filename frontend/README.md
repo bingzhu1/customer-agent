@@ -42,7 +42,7 @@ npm run dev              # http://localhost:5173
 
 ```
 VITE_HAS_DEV_TOKEN=1   # 已交付（main a81d059）
-VITE_HAS_CONFIRM=0     # Phase 4 写路径，尚未交付
+VITE_HAS_CONFIRM=1     # 已交付（main 2cbaaa6）
 VITE_HAS_GET_THREAD=1  # 已交付（main a81d059）
 ```
 
@@ -63,8 +63,9 @@ VITE_HAS_GET_THREAD=1  # 已交付（main a81d059）
 | 这个不确定吧 | `ANSWER` + `confidence=low` — 低置信标记 |
 | 其他 | `ANSWER` — 正常回答带引用 |
 
-输入含「写路径」或「未开」的话，可以看到**当前真实后端**的形状：待确认卡片照常渲染
+输入含「写路径」或「未开」的话，可以看到**动作没落库时**的形状：待确认卡片照常渲染
 （金额与策略引用是真值），但 `action_id` / `confirm_url` / `expires_at` 为 null，确认按钮置灰。
+mock 下点「确认执行」会给出执行回执；再点一次同一动作是幂等重放（replay），与真实后端一致。
 
 左栏"按 thread_id 打开"填 `th_gone` 可以看到 §8.4 的 404 展示（"会话不存在或不属于你"）。
 
@@ -77,7 +78,8 @@ VITE_HAS_GET_THREAD=1  # 已交付（main a81d059）
 | `confidence` | 后端是 `"low"` / `"normal"`（PRD 示例写的是 high，类型两者都容纳） |
 | `handoff_offer` | 是一句话**字符串**，不是对象 |
 | `pending_action.summary.amount` | **字符串**（Decimal 序列化），前端不做数值换算 |
-| `pending_action` 的 id 三件套 | Phase 4 前 `action_id` / `confirm_url` / `expires_at` 恒为 null |
+| `pending_action` 的 id 三件套 | 写路径已开（main 2cbaaa6），三者都是真值；落库失败时仍可能为 null，按 `action_id != null` 决定按钮能不能点 |
+| `POST /v1/actions/{id}/confirm` 的响应 | **不是** §8.2 的对话响应，是执行回执 `{action_id, status, reason_code, replay, result, request_id}`，前端单独渲染成一条回执 |
 | 历史消息 | 只有 `role` / `content` / `created_at`，**不回放判定结果** |
 
 ## 结构
@@ -123,8 +125,8 @@ VITE_INTEGRATION=1 npm run test
 ```
 
 联调测试会真的调模型（一轮约 10–35 秒），断言只挑契约层面的点：
-82913 → `REQUIRE_CONFIRMATION` / `POLICY_SATISFIED`、`amount="89.00"`、
-`action_id` 为 null、404 信封被解析成 `ApiError`。
+82913 → `REQUIRE_CONFIRMATION` / `POLICY_SATISFIED`、`amount="89.00"`、可点的 `action_id`；
+确认后回执带 `simulated=true`，再确认一次是 `replay=true` 的幂等重放；404 信封被解析成 `ApiError`。
 
 ## 不做
 

@@ -96,6 +96,46 @@ describe('timelineReducer 关键分支', () => {
     expect(action?.policy_id).toBe('REFUND-STD-001')
   })
 
+  it('确认后的执行回执单独成条，且待确认动作不再可点', () => {
+    const withAction = oneTurn(FIXTURES.refund())
+    expect(latestPendingAction(withAction)?.action_id).toBe('act_mock01')
+
+    const after = timelineReducer(withAction, {
+      type: 'action.result',
+      id: 'a2',
+      result: {
+        action_id: 166,
+        status: 'succeeded',
+        reason_code: 'POLICY_SATISFIED',
+        replay: false,
+        result: { refund_id: 9002, amount: '89.00', status: 'succeeded', simulated: true },
+        request_id: 'req_x',
+      },
+    })
+    const last = after.items[after.items.length - 1]
+    expect(last.kind).toBe('action')
+    if (last.kind !== 'action') throw new Error('unreachable')
+    expect(last.result.result?.simulated).toBe(true)
+  })
+
+  it('同一动作已有回执时，按钮不再出现（不允许确认第二次）', () => {
+    const withAction = oneTurn(FIXTURES.refund())
+    const after = timelineReducer(withAction, {
+      type: 'action.result',
+      id: 'a2',
+      result: {
+        // 后端 action_id 是数字，pending_action 里是字符串，比较时要按字符串对齐
+        action_id: 'act_mock01' as unknown as number,
+        status: 'succeeded',
+        reason_code: 'IDEMPOTENT_REPLAY',
+        replay: true,
+        result: null,
+        request_id: null,
+      },
+    })
+    expect(latestPendingAction(after)).toBeNull()
+  })
+
   it('reset 用于拉历史，整条时间线被替换', () => {
     const state = timelineReducer(oneTurn(FIXTURES.answer()), {
       type: 'reset',

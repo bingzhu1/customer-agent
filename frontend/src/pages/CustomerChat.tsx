@@ -251,6 +251,30 @@ export default function CustomerChat({ client, ws, onLogout }: Props) {
                     </div>
                   </div>
                 )
+              case 'action': {
+                // 执行回执。对客户不讲 action_id / reason_code，只讲结果；
+                // 但模拟执行与幂等重放必须如实说，不能让人以为真退了两笔。
+                const receipt = item.result
+                const money = receipt.result?.amount
+                return (
+                  <div className="c-turn c-turn-agent" key={item.id}>
+                    <Avatar size={32} />
+                    <div className="c-stack">
+                      <div className="c-bubble">
+                        {receipt.status === 'rejected'
+                          ? '好的，这次退款已经取消，订单保持原状。'
+                          : receipt.status === 'succeeded'
+                            ? `退款已受理${money ? `，${money} 元` : ''}将原路退回你的支付账户。`
+                            : '这笔动作没有执行成功，我已经记录下来。'}
+                        {receipt.replay && '（这笔刚才已经提交过了，没有重复扣款。）'}
+                      </div>
+                      {receipt.result?.simulated === true && (
+                        <span className="muted small">演示环境：退款为模拟执行，未真实出款。</span>
+                      )}
+                    </div>
+                  </div>
+                )
+              }
               case 'assistant':
                 return (
                   <CustomerAssistantItem

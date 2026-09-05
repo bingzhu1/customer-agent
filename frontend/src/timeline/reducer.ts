@@ -5,7 +5,7 @@
  * **state 与 item 的形状不变**——新事件只是往 items 里多写几种条目或就地改写。
  */
 
-import type { ApiError, MessageResponse } from '../api/types'
+import type { ApiError, ConfirmActionResponse, MessageResponse } from '../api/types'
 
 export type TimelineItem =
   | { kind: 'user'; id: string; text: string }
@@ -13,12 +13,15 @@ export type TimelineItem =
   | { kind: 'waiting'; id: string; hint?: string }
   | { kind: 'assistant'; id: string; result: MessageResponse }
   | { kind: 'error'; id: string; error: ApiError }
+  /** 确认 / 取消一个待执行动作后的执行回执（不是对话回复） */
+  | { kind: 'action'; id: string; result: ConfirmActionResponse }
 
 export type TimelineEvent =
   | { type: 'user.message'; id: string; text: string }
   | { type: 'waiting'; id: string; hint?: string }
   | { type: 'assistant.final'; id: string; result: MessageResponse }
   | { type: 'error'; id: string; error: ApiError }
+  | { type: 'action.result'; id: string; result: ConfirmActionResponse }
   /** 拉历史：整条时间线换成给定条目（不是事件流的一部分，但走同一个 reducer） */
   | { type: 'reset'; items: TimelineItem[] }
 
@@ -47,16 +50,28 @@ export function timelineReducer(state: TimelineState, event: TimelineEvent): Tim
       return { items: upsert(state.items, { kind: 'assistant', id: event.id, result: event.result }) }
     case 'error':
       return { items: upsert(state.items, { kind: 'error', id: event.id, error: event.error }) }
+    case 'action.result':
+      return { items: upsert(state.items, { kind: 'action', id: event.id, result: event.result }) }
     case 'reset':
       return { items: event.items }
   }
 }
 
-/** 最后一条待确认动作：只有最新一条助手回复里的 pending_action 才可操作。 */
+/**
+ * 最后一条待确认动作：只有最新一条助手回复里的 pending_action 才可操作。
+ * 一旦这个动作已经有了执行回执，就不再返回它——按钮该消失，不该能点第二次。
+ */
 export function latestPendingAction(state: TimelineState) {
+  const done = new Set(
+    state.items.filter((item) => item.kind === 'action').map((item) => String(item.result.action_id)),
+  )
   for (let i = state.items.length - 1; i >= 0; i--) {
     const item = state.items[i]
-    if (item.kind === 'assistant') return item.result.pending_action
+    if (item.kind === 'assistant') {
+      const action = item.result.pending_action
+      if (action !== null && action.action_id !== null && done.has(action.action_id)) return null
+      return action
+    }
   }
   return null
 }

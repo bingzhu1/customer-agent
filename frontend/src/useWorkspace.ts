@@ -121,7 +121,8 @@ export function useWorkspace(client: ApiClient, onLogout: () => void) {
       emit(threadId, { type: 'waiting', id: replyId, hint: accept ? '正在提交确认…' : '正在取消…' })
       try {
         const result = await client.confirmAction(action.action_id, accept, controller.signal)
-        emit(threadId, { type: 'assistant.final', id: replyId, result })
+        // 确认接口回的是执行回执，不是 §8.2 的对话响应，所以走单独的事件
+        emit(threadId, { type: 'action.result', id: replyId, result })
       } catch (cause) {
         if (isAbort(cause)) return
         const text = failure(cause)

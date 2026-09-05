@@ -22,7 +22,7 @@ describe.skipIf(!RUN)('client.ts ↔ 真实后端', () => {
   const client = createHttpClient({
     baseUrl: BASE,
     getToken: () => token,
-    capabilities: { devToken: true, confirm: false, getThread: true },
+    capabilities: { devToken: true, confirm: true, getThread: true },
   })
 
   it('dev token → whoami：身份以服务端认定为准', async () => {
@@ -34,7 +34,7 @@ describe.skipIf(!RUN)('client.ts ↔ 真实后端', () => {
   })
 
   it(
-    '建会话 → 发消息：82913 走到 REQUIRE_CONFIRMATION，卡片有真金额但没有 action_id',
+    '建会话 → 发消息：82913 走到 REQUIRE_CONFIRMATION，卡片带真金额与可点的 action_id',
     async () => {
       const { thread_id } = await client.createThread()
       expect(thread_id).toBeTruthy()
@@ -42,9 +42,12 @@ describe.skipIf(!RUN)('client.ts ↔ 真实后端', () => {
       const result = await client.sendMessage(thread_id, '订单 82913 我要退款。')
       expect(result.decision).toBe('REQUIRE_CONFIRMATION')
       expect(result.reason_code).toBe('POLICY_SATISFIED')
-      // 写路径 Phase 4 才开：id 三件套为 null，金额与策略引用是真值
-      expect(result.pending_action?.action_id).toBeNull()
-      expect(result.pending_action?.confirm_url).toBeNull()
+      // 写路径已开（main 2cbaaa6）：动作已落 agent_actions，三件套都是真值
+      expect(result.pending_action?.action_id).toBeTruthy()
+      expect(result.pending_action?.confirm_url).toBe(
+        `/v1/actions/${result.pending_action?.action_id}/confirm`,
+      )
+      expect(result.pending_action?.expires_at).toBeTruthy()
       expect(result.pending_action?.summary.amount).toBe('89.00')
       expect(result.pending_action?.policy_id).toBe('REFUND-STD-001')
       expect(result.citations.length).toBeGreaterThan(0)
@@ -59,6 +62,37 @@ describe.skipIf(!RUN)('client.ts ↔ 真实后端', () => {
     },
     120_000,
   )
+
+  it(
+    '确认退款闭环：回执带金额与 simulated，再确认一次是幂等重放',
+    async () => {
+      const { thread_id } = await client.createThread()
+      const turn = await client.sendMessage(thread_id, '订单 82913 我要退款。')
+      const actionId = turn.pending_action?.action_id
+      expect(actionId).toBeTruthy()
+
+      const receipt = await client.confirmAction(actionId!, true)
+      expect(receipt.status).toBe('succeeded')
+      expect(receipt.result?.amount).toBe('89.00')
+      expect(receipt.result?.simulated).toBe(true)
+      expect(typeof receipt.action_id).toBe('number')
+
+      // 第二次确认不产生新的副作用：同一张退款单，replay=true
+      const again = await client.confirmAction(actionId!, true)
+      expect(again.replay).toBe(true)
+      expect(again.reason_code).toBe('IDEMPOTENT_REPLAY')
+      expect(again.result?.refund_id).toBe(receipt.result?.refund_id)
+    },
+    120_000,
+  )
+
+  it('确认一个不存在的动作：404，信封被解析成 ApiError', async () => {
+    await client.confirmAction('999999', true).catch((error: ApiError) => {
+      expect(error).toBeInstanceOf(ApiError)
+      expect(error.status).toBe(404)
+      expect(error.code).toBe('NOT_FOUND')
+    })
+  })
 
   it('不存在或不属于自己的会话：404 NOT_FOUND，信封被解析成 ApiError', async () => {
     const missing = '00000000-0000-4000-8000-000000000000'
