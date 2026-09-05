@@ -15,6 +15,14 @@ class Settings(BaseSettings):
     llm_model_fallback: str = "claude-haiku-4-5"
     llm_model_judge: str = "claude-haiku-4-5"  # eval 的 LLM 评判只做语气与 groundedness
 
+    # Embedding / RAG（PRD §11、§13.4；Anthropic 不提供 embedding，向量化走独立 provider）
+    openai_api_key: str = Field(default="", repr=False)
+    embedding_model: str = "text-embedding-3-small"
+    embedding_dimensions: int = 1536  # 与 policy_chunks / memory_embeddings 的 vector(1536) 一致
+    rag_top_k: int = 8
+    rag_tau_low: float = 0.30  # 占位，Phase 2 用 golden 标定后回填 ADR-0007
+    rag_tau_high: float = 0.60
+
     # 数据库（ADR-0001：单实例双 schema）
     database_url: str = "postgresql+psycopg://cs_agent:cs_agent@localhost:5432/cs_agent"
 
