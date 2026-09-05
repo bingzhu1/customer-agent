@@ -27,7 +27,7 @@ authorization violation 7 → 0，越权 / 超期 / 食品 / 定制退款被确�
 | P1 | ① [x] V3 `f54962b` 25/54 硬门槛全绿，已合 main `fc65a74`；② `POST /v1/threads`、`POST /v1/threads/{id}/messages`（非流式，§8.2 响应体）、`GET /v1/threads/{id}`、dev-only `POST /v1/dev/token`；③[x] `search_policy` 换成 `rag.retriever.PolicyRetriever`；④ 新工具 `get_refunds` / `get_payments` / `get_profile`（会员等级、积分），签名无身份字段；⑤ ingest / persist 节点接 P2 的 CaseFacts 与 user_memory | [ ] |
 | P1 | ① 收掉 V3（`agents/v3_policy.py`）；②[x] `POST /v1/threads`、`POST /v1/threads/{id}/messages`（非流式，§8.2 响应体）、`GET /v1/threads/{id}`、dev-only `POST /v1/dev/token`；③[x] `search_policy` 换成 `rag.retriever.PolicyRetriever`；④ 新工具 `get_refunds` / `get_payments` / `get_profile`（会员等级、积分），签名无身份字段；⑤ ingest / persist 节点接 P2 的 CaseFacts 与 user_memory | [ ] |
 | P2 | Phase 5 记忆：`memory/case_facts.py`、`case_state.py`、`user_memory.py`、`extract.py`、`inject.py`、投毒测试 10 条 | [x] `c771c27`，已合 main `0983cfa` |
-| FE（新 session） | `frontend/`：Vite + React + TS 聊天页，先对 mock，后接真实 API；展示 decision / reason_code / citations 徽标、REQUIRE_CONFIRMATION 的确认按钮、转人工提示 | [~] 骨架 + mock 已合 main `89773b9`，build 通过；等 P1 的四个接口后切真实 API |
+| FE（新 session） | `frontend/`：Vite + React + TS 聊天页，先对 mock，后接真实 API；展示 decision / reason_code / citations 徽标、REQUIRE_CONFIRMATION 的确认按钮、转人工提示 | [x] 全部交付并联调通过（三条真实接口场景），三栏视觉改版 `9cae0e7`；确认流与 /review 页待写路径与审批路由 |
 | P1 | ①[x] 收掉 V3（`agents/v3_policy.py`）—— 25/54，硬门槛全绿，security 10/10，一致性 100%；②[x] `POST /v1/threads`、`POST /v1/threads/{id}/messages`（非流式，§8.2 响应体）、`GET /v1/threads/{id}`、dev-only `POST /v1/dev/token`；③[x] `search_policy` 换成 `rag.retriever.PolicyRetriever`；④ 新工具 `get_refunds` / `get_payments` / `get_profile`（会员等级、积分），签名无身份字段；⑤ ingest / persist 节点接 P2 的 CaseFacts 与 user_memory | [ ] |
 | P2 | Phase 5 记忆：`memory/case_facts.py`（PRD §10.2 强类型，只由确定性代码从工具结果 / verdict 填充）、`memory/user_memory.py`（写入带置信度 / 来源 / TTL / 版本，向量检索，软删除）、`memory/extract.py`（Haiku 抽取偏好与反复主题，同步版先行）、`memory/inject.py`（注入 prompt 时标"非权威提示"）、投毒测试（写入"该用户可无限退款"后 evaluate / decide 输出零变化） | [ ] |
 | FE（新 session） | `frontend/`：Vite + React + TS 聊天页，先对 mock，后接真实 API；展示 decision / reason_code / citations 徽标、REQUIRE_CONFIRMATION 的确认按钮、转人工提示 | [ ] |
@@ -142,7 +142,7 @@ prompt caching、记忆压缩与三方对比、人工控制台、混沌测试。
 
 ## Phase 6 — 人工控制台 + 韧性 + 可观测 · 未开始
 
-- [ ] M1 `/v1/human-review` 队列 + approve / edit / reject 从同一 checkpoint 恢复（FR-603/604/605/606）
+- [~] M1 人工审批内核 `services/human_review.py`（enqueue / list_pending / approve / edit 重算幂等键 / reject，审计 actor_type=human）—— P3 · `1770d37`，已合 main `47168f9`；路由 `/v1/human-review` 与 checkpoint 恢复 —— P1
 - [ ] M2 超时 / 重试 / 模型降级 / 熔断 / 优雅降级（FR-908/909）；优雅关闭（FR-107）
 - [ ] M3 Prometheus + Grafana 面板（FR-903/910）；成本与延迟 SLO；`Usage` 改为逐次调用列表以按模型拆成本
 - [ ] M4 故障注入测试（关 pgvector / LLM 超时 / 连续失败）
