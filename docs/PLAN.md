@@ -24,7 +24,7 @@ authorization violation 7 → 0，越权 / 超期 / 食品 / 定制退款被确�
 
 | 谁 | 做什么 | 状态 |
 |---|---|---|
-| P1 | ① [x] V3 `f54962b` 25/54 硬门槛全绿，已合 main `fc65a74`；② `POST /v1/threads`、`POST /v1/threads/{id}/messages`（非流式，§8.2 响应体）、`GET /v1/threads/{id}`、dev-only `POST /v1/dev/token`；③[x] `search_policy` 换成 `rag.retriever.PolicyRetriever`；④ 新工具 `get_refunds` / `get_payments` / `get_profile`（会员等级、积分），签名无身份字段；⑤[x] ingest / persist 节点接 P2 的 CaseFacts 与 user_memory（含 agents/v5_memory.py） | [ ] |
+| P1 | ① [x] V3 `f54962b` 25/54 硬门槛全绿，已合 main `fc65a74`；② `POST /v1/threads`、`POST /v1/threads/{id}/messages`（非流式，§8.2 响应体）、`GET /v1/threads/{id}`、dev-only `POST /v1/dev/token`；③[x] `search_policy` 换成 `rag.retriever.PolicyRetriever`；④ 新工具 `get_refunds` / `get_payments` / `get_profile`（会员等级、积分），签名无身份字段；⑤[x] ingest / persist 节点接 P2 的 CaseFacts 与 user_memory（含 agents/v5_memory.py） | ① [x] ② [x] `5c0400e` ③ [x] `5847400` ⑤ [x] `fc008d4`（v5-memory agent、tests/conftest.py 隔离）；④ 待用户确认 |
 | P1 | ① 收掉 V3（`agents/v3_policy.py`）；②[x] `POST /v1/threads`、`POST /v1/threads/{id}/messages`（非流式，§8.2 响应体）、`GET /v1/threads/{id}`、dev-only `POST /v1/dev/token`；③[x] `search_policy` 换成 `rag.retriever.PolicyRetriever`；④ 新工具 `get_refunds` / `get_payments` / `get_profile`（会员等级、积分），签名无身份字段；⑤[x] ingest / persist 节点接 P2 的 CaseFacts 与 user_memory（含 agents/v5_memory.py） | [ ] |
 | P2 | Phase 5 记忆：`memory/case_facts.py`、`case_state.py`、`user_memory.py`、`extract.py`、`inject.py`、投毒测试 10 条 | [x] `c771c27`，已合 main `0983cfa` |
 | FE（新 session） | `frontend/`：Vite + React + TS 聊天页，先对 mock，后接真实 API；展示 decision / reason_code / citations 徽标、REQUIRE_CONFIRMATION 的确认按钮、转人工提示 | [x] 全部交付并联调通过（三条真实接口场景），三栏视觉改版 `9cae0e7`；确认流与 /review 页待写路径与审批路由 |
