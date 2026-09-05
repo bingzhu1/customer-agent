@@ -45,6 +45,11 @@ class Settings(BaseSettings):
     #: 允许跨域的前端来源，逗号分隔。默认只放开本地 Vite 开发服务器。
     cors_origins: str = "http://localhost:5173"
 
+    #: 起服务时预热依赖（建连接池 + 一次极小模型调用）。
+    #: 首轮请求原本要等连接池与模型冷启动，实测 33 秒；预热把这段挪到启动时。
+    #: 代价是每次启动多一次 API 调用，因此可关。
+    warmup_on_startup: bool = True
+
     app_env: str = "dev"
     log_level: str = "INFO"
 

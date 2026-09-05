@@ -130,6 +130,61 @@ class ToolBelt:
                 for c in result.chunks
             ]
 
+    def get_refunds(self, order_id: int) -> list[dict[str, Any]]:
+        """该订单的退款记录（FR-211）。非本人订单返回空列表，与不存在不可区分。
+
+        `simulated` 一并回带：本阶段退款是模拟执行的，回复里不该把它说成真到账。
+        """
+        with self._record("get_refunds", {"order_id": order_id}):
+            return [
+                {
+                    "refund_id": r.id,
+                    "order_id": r.order_id,
+                    "amount": str(r.amount),
+                    "status": r.status,
+                    "reason_code": r.reason_code,
+                    "policy_id": r.policy_id,
+                    "policy_version": r.policy_version,
+                    "simulated": r.simulated,
+                    "created_at": r.created_at.isoformat(),
+                    "executed_at": r.executed_at.isoformat() if r.executed_at else None,
+                }
+                for r in self.repo.list_refunds(order_id)
+            ]
+
+    def get_payments(self, order_id: int) -> list[dict[str, Any]]:
+        """该订单的支付记录（FR-212）。归属校验同上。"""
+        with self._record("get_payments", {"order_id": order_id}):
+            return [
+                {
+                    "payment_id": p.id,
+                    "order_id": p.order_id,
+                    "method": p.method,
+                    "amount": str(p.amount),
+                    "status": p.status,
+                    "paid_at": p.paid_at.isoformat() if p.paid_at else None,
+                }
+                for p in self.repo.list_payments(order_id)
+            ]
+
+    def get_profile(self) -> dict[str, Any] | None:
+        """当前用户的档案（FR-213）。**签名里没有任何参数**——身份只能是自己。
+
+        只回带会员等级与注册时间这类"能说给本人听"的字段；
+        邮箱不回带（PRD §14.1 脱敏：完整邮箱不入日志，也没必要进 prompt）。
+        `tier` 在这里只用于组织话术，**资格判定必须重新查库**（红线 3）。
+        """
+        with self._record("get_profile", {}):
+            user = self.repo.get_profile()
+            if user is None:
+                return None
+            return {
+                "user_id": user.id,
+                "name": user.name,
+                "tier": user.tier,
+                "created_at": user.created_at.isoformat(),
+            }
+
     # --- 调用记录 -------------------------------------------------------------
 
     @property

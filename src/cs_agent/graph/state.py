@@ -38,6 +38,9 @@ class AgentState(TypedDict, total=False):
     shipping: dict[str, Any] | None
     ticket: dict[str, Any] | None
     policy_hits: list[dict[str, Any]]
+    refunds: list[dict[str, Any]]
+    payments: list[dict[str, Any]]
+    profile: dict[str, Any] | None
     #: 本轮检索的最高相似度与分带；未检索时为 None（决策矩阵据此跳过 τ 门控）
     retrieval_max_score: float | None
     retrieval_band: str | None

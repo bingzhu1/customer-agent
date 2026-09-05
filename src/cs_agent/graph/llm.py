@@ -29,6 +29,11 @@ Intent = Literal[
     "shipping_status",
     "ticket_status",
     "refund_request",
+    #: 问"我那笔退款到哪了"——查退款进度，不是发起新退款
+    "refund_status",
+    "payment_status",
+    #: 问"我是什么会员""我有什么权益"——要看档案
+    "membership_question",
     "policy_question",
     "human_request",
     "other",
@@ -63,6 +68,9 @@ UNDERSTANDING_SCHEMA: dict[str, Any] = {
                 "shipping_status",
                 "ticket_status",
                 "refund_request",
+                "refund_status",
+                "payment_status",
+                "membership_question",
                 "policy_question",
                 "human_request",
                 "other",
@@ -94,6 +102,8 @@ UNDERSTAND_SYSTEM = """你是电商客服系统的意图解析器。只做抽取
 规则：
 - 只输出 JSON，字段含义见 schema。
 - order_id / ticket_id 只填用户消息里明确出现的数字；没有就填 null，不要猜。
+- 区分「申请退款」与「查退款进度」：前者是 refund_request，后者是 refund_status。
+- 问自己的会员等级 / 权益 → membership_question；问支付方式与到账 → payment_status。
 - 用户要求人工、投诉转接 → wants_human=true。
 - 明显愤怒、威胁投诉/曝光 → negative_sentiment=true。
 - policy_query 填用户想问的政策主题（如"退款期限""保修范围"），没有就留空字符串。
