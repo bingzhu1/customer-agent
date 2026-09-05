@@ -69,6 +69,8 @@
 
 ### 已定（2026-09-05）
 
+- **前端**：正式页面但 demo 级，Vite + React + TS 放 `web/`，无组件库；对话页 = Phase 4 M7，审批页 = Phase 6 M6（PLAN 已加）。设计借鉴 embedease-ai 的 chat-sdk（纯 reducer），不复制代码
+
 - 单会话成本目标 **$0.05 维持**；Phase 6 前只记录不考核（原未决问题 2）
 - 主模型 Claude Sonnet 5（`claude-sonnet-5`），降级 Claude Haiku 4.5（`claude-haiku-4-5`）
 - Docker 运行时用 colima 而非 Docker Desktop（无需 sudo、无 GUI）
