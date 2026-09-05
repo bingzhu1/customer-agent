@@ -113,7 +113,7 @@ prompt caching、记忆压缩与三方对比、人工控制台、混沌测试。
 ## Phase 4 — 写路径：提议 → 确认 → 执行 · 内核先行 · 负责 P3（内核：actions/ services/）+ P1（interrupt / resume / confirm API）
 
 - [x] M1 `ActionProposal` + 幂等键 + 状态机 + ActionService（FR-501~505）—— P3 · `868d34b`，已合 main `d4736fd`（46 测试：并发只执行一次、过期拒绝、他人 NotFound、审计逐步 +1）
-- [ ] M2 interrupt / resume（FR-601/602）+ `POST /v1/actions/{id}/confirm` —— P1，在第二轮 ⑤ 之后接 ActionService；前端确认按钮据此点亮
+- [x] M2 `POST /v1/actions/{id}/confirm` 接 ActionService（FR-503/504/505/602）—— P3 · `b77ed94`，已合 main `2cbaaa6`；LangGraph interrupt / resume 形态推后（现为 ChatService 同事务 propose + 确认接口）
 - [x] M3 `RefundService(SIMULATED)`（FR-506）+ `audit_log` 追加式（FR-507）+ 重试幂等（FR-508）—— P3 · `868d34b`
 - [ ] M4 `escalate_to_human` 创建 human_review 并中断（FR-206）；`create_ticket`（FR-205，P1）
 - [ ] M5 SSE 事件协议 v1（FR-103，§8.3）
