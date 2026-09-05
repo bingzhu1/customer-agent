@@ -128,3 +128,227 @@ code {
   padding: 1px 4px;
   border-radius: 4px;
 }
+
+/* ── 对话页布局 ───────────────────────────────── */
+.chat {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+.topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+  flex-wrap: wrap;
+}
+
+.timeline {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.composer {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+  padding: 12px 16px;
+  background: var(--panel);
+  border-top: 1px solid var(--line);
+}
+
+.composer .input {
+  resize: none;
+}
+
+/* ── 时间线条目 ───────────────────────────────── */
+.turn {
+  display: flex;
+  max-width: 860px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.turn.user {
+  justify-content: flex-end;
+}
+
+.bubble {
+  border-radius: 12px;
+  padding: 12px 14px;
+  max-width: 84%;
+  line-height: 1.6;
+}
+
+.user-bubble {
+  background: var(--accent);
+  color: #fff;
+  white-space: pre-wrap;
+}
+
+.assistant-bubble {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-left-width: 4px;
+  width: 100%;
+}
+
+.waiting {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--muted);
+  display: inline-block;
+  animation: blink 1.2s infinite ease-in-out;
+}
+
+.dot:nth-child(2) { animation-delay: 0.2s; }
+.dot:nth-child(3) { animation-delay: 0.4s; margin-right: 6px; }
+
+@keyframes blink {
+  0%, 80%, 100% { opacity: 0.25; }
+  40% { opacity: 1; }
+}
+
+.error-bubble {
+  background: #fdf3f2;
+  border: 1px solid #f0c9c5;
+  width: 100%;
+}
+
+.error-bubble p {
+  margin: 4px 0 10px;
+}
+
+.reply {
+  margin: 0 0 10px;
+  white-space: pre-wrap;
+}
+
+/* ── 判定徽标与色调 ───────────────────────────── */
+.badges {
+  margin-top: 10px;
+}
+
+.badge {
+  font-size: 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: #f2f4f7;
+  color: #40474f;
+}
+
+.banner {
+  font-size: 13px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  margin-bottom: 10px;
+  border: 1px solid transparent;
+}
+
+.tone-neutral { background: #f2f4f7; border-color: var(--line); color: #40474f; }
+.tone-info { background: #eaf2ff; border-color: #c3d8fb; color: #1c4fa8; }
+.tone-confirm { background: #fff6e5; border-color: #f0d9a8; color: #8a5a00; }
+.tone-human { background: #f2ecfd; border-color: #d6c6f5; color: #5a35a8; }
+.tone-deny { background: #fdecea; border-color: #f2c3bd; color: #a3241a; }
+.tone-degrade { background: #f0f1f2; border-color: #d8dbde; color: #5b6167; }
+
+.tone-border-neutral { border-left-color: #c9ced4; }
+.tone-border-info { border-left-color: #4a86e8; }
+.tone-border-confirm { border-left-color: #e0a83a; }
+.tone-border-human { border-left-color: #8358d6; }
+.tone-border-deny { border-left-color: #d3453a; }
+.tone-border-degrade { border-left-color: #9aa1a8; }
+
+/* ── 待确认动作 ───────────────────────────────── */
+.pending {
+  border: 1px solid #f0d9a8;
+  background: #fffcf5;
+  border-radius: 10px;
+  padding: 12px;
+  margin-bottom: 10px;
+}
+
+.pending h3 {
+  font-size: 13px;
+  margin: 0 0 8px;
+  color: #8a5a00;
+}
+
+.kv {
+  display: grid;
+  grid-template-columns: 72px 1fr;
+  gap: 4px 10px;
+  margin: 0 0 12px;
+  font-size: 13px;
+}
+
+.kv dt {
+  color: var(--muted);
+}
+
+.kv dd {
+  margin: 0;
+}
+
+.amount {
+  font-weight: 600;
+  font-size: 15px;
+}
+
+/* ── 引用 ─────────────────────────────────────── */
+.citations {
+  margin-top: 10px;
+  font-size: 13px;
+}
+
+.citations ul {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.policy-id {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.anchor {
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 2px;
+}
+
+.link {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--accent);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.small {
+  font-size: 12px;
+}
