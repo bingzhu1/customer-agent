@@ -129,6 +129,14 @@ chore: 杂项
 不对怎么办：git revert <hash>  或  git checkout <tag>
 ```
 
+**命令必须是可以整段复制粘贴就能跑的**：
+
+- **第一条永远是 `cd <该 session 的 worktree 绝对路径>`**，多 worktree 并行时不写 cd 会跑错目录
+- 变量要么写死实际值，要么给出取值命令（如 `TOKEN=$(make token USER=101 | tail -1)`），
+  不要留 `<hash>`、`<你的端口>` 这种占位符让用户自己填
+- 要另开终端的步骤写清楚（如"另开一个终端跑 `make serve`"）
+- 回退命令同样要带 cd 与真实 hash
+
 ---
 
 ## 6. 记录文档

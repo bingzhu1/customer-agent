@@ -1,5 +1,5 @@
 # 常用命令（CLAUDE.md §10）。Phase 0 先落 dev / db / test / lint，其余随 Phase 补齐。
-.PHONY: dev dev-db down logs install test lint fmt eval migrate seed psql
+.PHONY: dev dev-db down logs install test lint fmt eval migrate seed psql serve token
 
 install:          ## 安装 Python 依赖（uv 管理虚拟环境）
 	uv sync
@@ -37,6 +37,13 @@ migrate:          ## 执行数据库迁移（Alembic，版本表在 agent schema
 
 seed:             ## 灌入 biz 种子数据（幂等，可重复执行）
 	uv run python -m cs_agent.seed.biz_seed
+
+serve:            ## 起 API（热重载）。先 make dev-db
+	uv run uvicorn cs_agent.api.main:app --reload --port $${API_PORT:-8000}
+
+token:            ## 签发本地调试用 JWT：make token USER=101 ROLE=customer
+	@uv run python -c "from cs_agent.auth.jwt import issue_token; \
+	print(issue_token(int('$${USER:-101}'), ['$${ROLE:-customer}']))"
 
 AGENT ?= dummy
 EVAL_ARGS ?=
