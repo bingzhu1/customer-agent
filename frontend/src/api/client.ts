@@ -97,11 +97,12 @@ export function createHttpClient(options: HttpClientOptions): ApiClient {
 
     async issueDevToken(userId: number): Promise<string> {
       // dev-only 接口，签发前身份还不存在，所以这里是唯一允许传 user_id 的地方
-      const body = await request<{ token?: string; access_token?: string }>('/v1/dev/token', {
+      // 响应是 {token, token_type, expires_in_minutes}
+      const body = await request<{ token?: string }>('/v1/dev/token', {
         method: 'POST',
         body: { user_id: userId },
       })
-      const token = body.token ?? body.access_token
+      const token = body.token
       if (!token) {
         throw new ApiError({
           status: 500,
@@ -119,7 +120,8 @@ export function createHttpClient(options: HttpClientOptions): ApiClient {
     sendMessage: (threadId, text, signal) =>
       request<MessageResponse>(`/v1/threads/${encodeURIComponent(threadId)}/messages`, {
         method: 'POST',
-        body: { content: text },
+        // 字段名是 message；后端 schema 是 extra="forbid"，多一个字段就 400
+        body: { message: text },
         signal,
       }),
 

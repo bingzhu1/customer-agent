@@ -19,12 +19,15 @@ interface Props {
   onConfirm: (action: PendingAction, confirm: boolean) => void
 }
 
-function formatAmount(amount: number, currency: string) {
+/** 金额是字符串（后端 Decimal 序列化），原样展示，前端不做数值换算。 */
+function formatAmount(amount: string | null, currency: string | null) {
+  if (amount === null) return '—'
   const symbol = currency === 'CNY' ? '¥' : ''
-  return `${symbol}${amount.toFixed(2)} ${currency}`
+  return `${symbol}${amount}${currency ? ` ${currency}` : ''}`
 }
 
-function formatExpiry(iso: string) {
+function formatExpiry(iso: string | null) {
+  if (iso === null) return '—'
   const at = new Date(iso)
   if (Number.isNaN(at.getTime())) return iso
   const minutes = Math.round((at.getTime() - Date.now()) / 60000)
@@ -33,13 +36,18 @@ function formatExpiry(iso: string) {
 }
 
 function PendingActionPanel({ action, actionable, confirmEnabled, busy, onConfirm }: Props & { action: PendingAction }) {
+  // 写路径（Phase 4）没开时后端不落 agent_actions，action_id 为 null：
+  // 卡片照常渲染（金额与策略引用是真值），但没有可确认的对象，按钮必须置灰。
+  const noAction = action.action_id === null
+  const clickable = actionable && confirmEnabled && !noAction && !busy
+
   return (
     <div className="pending">
       <h3>待确认动作</h3>
       <dl className="kv">
         <dt>动作</dt>
         <dd>
-          {action.type} · <code>{action.action_id}</code>
+          {action.type} {action.action_id ? <code>{action.action_id}</code> : <span className="muted">（尚未落库）</span>}
         </dd>
         {action.summary.order_id !== undefined && (
           <>
@@ -51,33 +59,30 @@ function PendingActionPanel({ action, actionable, confirmEnabled, busy, onConfir
         <dd className="amount">{formatAmount(action.summary.amount, action.summary.currency)}</dd>
         <dt>依据</dt>
         <dd>
-          {action.policy_id} <span className="muted">v{action.policy_version}</span>
+          {action.policy_id ?? '—'}
+          {action.policy_version !== null && <span className="muted"> v{action.policy_version}</span>}
         </dd>
         <dt>有效期</dt>
         <dd>{formatExpiry(action.expires_at)}</dd>
       </dl>
       <div className="row">
-        <button
-          className="btn primary"
-          disabled={!actionable || !confirmEnabled || busy}
-          onClick={() => onConfirm(action, true)}
-        >
+        <button className="btn primary" disabled={!clickable} onClick={() => onConfirm(action, true)}>
           确认执行
         </button>
-        <button
-          className="btn"
-          disabled={!actionable || !confirmEnabled || busy}
-          onClick={() => onConfirm(action, false)}
-        >
+        <button className="btn" disabled={!clickable} onClick={() => onConfirm(action, false)}>
           取消
         </button>
-        <span className="muted">
-          <code>POST {action.confirm_url}</code>
-        </span>
+        {action.confirm_url && (
+          <span className="muted">
+            <code>POST {action.confirm_url}</code>
+          </span>
+        )}
       </div>
-      {!confirmEnabled && (
+      {(noAction || !confirmEnabled) && (
         <p className="hint">
-          后端 <code>POST /v1/actions/{'{id}'}/confirm</code> 尚未交付（Phase 4 写路径），按钮暂时置灰。
+          写路径（Phase 4）尚未开通：后端还不落 <code>agent_actions</code>，没有 action_id 也没有
+          <code> POST /v1/actions/{'{id}'}/confirm</code>，所以按钮置灰。
+          上面的金额与策略引用是**真值**——判定已经跑完，只差执行这一步。
         </p>
       )}
     </div>
@@ -99,17 +104,7 @@ export default function AssistantFinalItem(props: Props) {
 
         {result.pending_action && <PendingActionPanel {...props} action={result.pending_action} />}
 
-        {result.handoff_offer && (
-          <div className="banner tone-human">
-            {result.handoff_offer.message}
-            {result.handoff_offer.review_id && (
-              <>
-                {' '}
-                <code>{result.handoff_offer.review_id}</code>
-              </>
-            )}
-          </div>
-        )}
+        {result.handoff_offer && <div className="banner tone-human">{result.handoff_offer}</div>}
 
         <div className="row badges">
           <span className={`badge tone-${style.tone}`}>
@@ -135,10 +130,12 @@ export default function AssistantFinalItem(props: Props) {
               {result.citations.map((citation) => (
                 <li key={`${citation.policy_id}-${citation.policy_version}-${citation.anchor}`}>
                   <span className="policy-id">{citation.policy_id}</span>
-                  <span className="muted"> v{citation.policy_version}</span>
+                  {citation.policy_version !== null && (
+                    <span className="muted"> v{citation.policy_version}</span>
+                  )}
                   {openCitations && (
                     <div className="anchor">
-                      anchor: <code>{citation.anchor}</code>
+                      anchor: <code>{citation.anchor ?? '（无）'}</code>
                     </div>
                   )}
                 </li>

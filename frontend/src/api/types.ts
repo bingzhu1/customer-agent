@@ -40,13 +40,18 @@ export const REASON_CODES = [
 ] as const
 export type ReasonCode = (typeof REASON_CODES)[number]
 
-export type Confidence = 'high' | 'medium' | 'low'
+/**
+ * 后端 `MessageResponse.confidence` 是 Literal["low", "normal"]（见 api/schemas.py）；
+ * PRD §8.2 的示例写的是 "high"，这里两者都容纳，展示时只区分"是不是 low"。
+ */
+export type Confidence = 'low' | 'normal' | 'high'
 
 /** §9.2：引用必须回带策略 id 与版本，前端据此展示"依据哪条规则的哪个版本"。 */
 export interface Citation {
   policy_id: string
-  policy_version: number
-  anchor: string
+  /** 后端可空（CitationOut.policy_version: int | None） */
+  policy_version: number | null
+  anchor: string | null
 }
 
 export interface Usage {
@@ -55,29 +60,28 @@ export interface Usage {
   estimated_cost_usd: number
 }
 
-/**
- * §5.3 的待确认动作。字段以 P1 实现为准，先按旅程 C 的
- * action_id / 金额明细 / policy 引用 / confirm_url / expires_at 定型。
- */
-export interface PendingAction {
-  action_id: string
-  type: string
-  summary: {
-    order_id?: number
-    amount: number
-    currency: string
-    [key: string]: unknown
-  }
-  policy_id: string
-  policy_version: number
-  confirm_url: string
-  expires_at: string
+/** 金额明细。注意 `amount` 是**字符串**（后端用 Decimal 序列化，避免浮点误差）。 */
+export interface PendingActionSummary {
+  order_id?: number | null
+  amount: string | null
+  currency: string | null
 }
 
-/** §5.4：转人工时给出的入口；低置信回答（规则 14）也会带。 */
-export interface HandoffOffer {
-  review_id?: string
-  message: string
+/**
+ * §5.3 的待确认动作，字段与后端 `PendingActionOut` 对齐。
+ *
+ * Phase 4 之前**不落 `agent_actions` 表**，所以 `action_id` / `confirm_url` /
+ * `expires_at` 恒为 null——卡片照常渲染（金额与策略引用是真值），确认按钮置灰。
+ * 后端刻意不编一个假 action_id，前端也不能自己造一个。
+ */
+export interface PendingAction {
+  action_id: string | null
+  type: string
+  summary: PendingActionSummary
+  policy_id: string | null
+  policy_version: number | null
+  confirm_url: string | null
+  expires_at: string | null
 }
 
 /** §8.2 非流式响应体。 */
@@ -90,28 +94,36 @@ export interface MessageResponse {
   citations: Citation[]
   tools_used: string[]
   pending_action: PendingAction | null
-  handoff_offer: HandoffOffer | null
+  /** 后端是一句话文案（str | None），不是对象 */
+  handoff_offer: string | null
   usage: Usage
   latency_ms: number
-  request_id: string
+  request_id: string | null
 }
 
 export interface ThreadCreated {
   thread_id: string
+  status: string
+  created_at: string
 }
 
 /** `GET /v1/threads/{id}`：会话详情 + 消息 + CaseFacts 摘要（§8.1）。 */
 export interface ThreadDetail {
   thread_id: string
+  status: string
+  created_at: string
+  last_active_at: string
   messages: ThreadMessage[]
-  case_facts_summary?: Record<string, unknown> | null
+  /** CaseFacts 物化副本，只由确定性代码写入，前端只读（红线 3） */
+  case_facts: Record<string, unknown>
+  narrative_summary: string | null
 }
 
+/** 历史消息只有角色与文本，**不带**本轮的判定结果——判定不在历史里回放。 */
 export interface ThreadMessage {
-  role: 'user' | 'assistant'
+  role: string
   content: string
-  /** 助手消息带上本轮的判定结果；历史里可能缺，缺就只渲染文本。 */
-  result?: Partial<MessageResponse> | null
+  created_at: string
 }
 
 export interface WhoAmI {
