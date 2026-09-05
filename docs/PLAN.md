@@ -16,7 +16,7 @@ authorization violation 7 → 0，越权 / 超期 / 食品 / 定制退款被确�
 | 时段 | Phase 1（P1） | Phase 3（P3） | master |
 |---|---|---|---|
 | 0–60 分 | [x] 已合入 main（两个已验收 milestone）；[x] LangGraph 最小图 + 4 个只读工具 + policy_gate / decide 节点接 P3 `87b98e0`，已合 main `6667cca` | [x] 引擎 + 矩阵已交付 `e2a5927` → [ ] rebase main；[x] 受约束的拒绝 / 升级话术模板 `decision/templates.py` `add05c9`，已合 main `d108a05` | [x] 合 main、tag；[x] 审 P3 接口定稿（PolicyFacts 8 字段 / evaluate / decide，与 prompt 一致）；[ ] PLAN 改冲刺版 |
-| 60–120 分 | [ ] `agents/v1_tools.py` 实现 `AgentUnderTest`，`make eval AGENT=v1` | [ ] 交付模板；待命修 bug | [x] 合 P3 到 main `d31d9a7`；[ ] 跑 V1 eval，把授权用例修到 0 违规 |
+| 60–120 分 | [x] `agents/v1_tools.py` 实现 `AgentUnderTest`，`make eval AGENT=v1` —— V1 19/54，硬门槛全绿，authorization violation = 0 | [ ] 交付模板；待命修 bug | [x] 合 P3 到 main `d31d9a7`；[ ] 跑 V1 eval，把授权用例修到 0 违规 |
 | 120–180 分 | [ ] `policy_gate` / `decide` 节点接 P3 的 `evaluate` / `decide`，`agents/v3_policy.py`，`make eval AGENT=v3` | [ ] 待命 | [ ] 跑 V3 eval；[ ] README 写 V0→V3 演进表；[ ] 合 P1 到 main，tag `v0.4-sprint` |
 
 **冲刺期间明确推后**（不删，回到各 Phase 的正常节奏再做）：RAG 与向量检索（`search_policy` 用策略 `human_text` 关键词匹配代替，标注"非真 RAG"）、
@@ -53,7 +53,7 @@ prompt caching、记忆压缩与三方对比、人工控制台、混沌测试。
 - [~] M4 LangGraph 最小图 ingest→understand→act→policy_gate→decide→respond（`87b98e0`，MemorySaver）；Postgres checkpointer 推后
 - [x] M5 4 个只读工具，签名无身份字段（FR-208），不可信包装（FR-209），单轮预算（FR-210）· `87b98e0`；search_policy 为关键词占位，Phase 2 替换
 - [ ] M6 中间件：request_id / 限流 429（FR-806）/ 超时；Langfuse trace（FR-902）；prompt caching（FR-911）；分节点 effort（FR-912）
-- [ ] M7 实现 `AgentUnderTest` 接线 → `make eval AGENT=v1`，报表入库，对照 V0
+- [x] M7 实现 `AgentUnderTest` 接线 → `make eval AGENT=v1`，报表入库，对照 V0 · 2026-09-05 · `PENDING`
 - [ ] 与 Phase 3 接线：`policy_gate` / `decide` 节点调用 P3 的纯函数（Phase 3 交付后）
 
 **DoD**
