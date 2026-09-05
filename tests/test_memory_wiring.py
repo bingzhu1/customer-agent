@@ -27,6 +27,7 @@ from cs_agent.graph.llm import Understanding
 from cs_agent.graph.memory_store import InMemoryCaseFactsStore
 from cs_agent.memory.case_facts import CaseFacts
 from cs_agent.memory.extract import MemoryCandidate
+from cs_agent.memory.jobs import InlineExtractionQueue
 from cs_agent.memory.user_memory import UserMemoryRepo
 from cs_agent.policy.schema import load_policies
 from cs_agent.rag.embeddings import FakeEmbeddings
@@ -91,7 +92,7 @@ def _session(
     store: InMemoryCaseFactsStore | None = None,
     memory: UserMemoryRepo | None = None,
     enable_memory: bool = False,
-) -> GraphSession:
+) -> GraphSession:  # noqa: DOC201
     from sqlalchemy.orm import Session as OrmSession
 
     return GraphSession(
@@ -208,41 +209,56 @@ def test_poisoned_memory_does_not_change_the_decision(
     assert poisoned.verdict_policy_id == baseline.verdict_policy_id
 
 
-def test_memory_is_written_after_a_turn(engine: Engine, memory: UserMemoryRepo) -> None:
-    """开了记忆写入后，抽取到的候选要落库，且带来源与置信度（FR-705）。"""
+def test_memory_is_written_through_the_extraction_queue(
+    engine: Engine, memory: UserMemoryRepo
+) -> None:
+    """persist 只负责投递，真正写库的是 `memory.jobs` 的队列（不变式 4：异步写入）。
 
-    class StubExtractClient:
-        """替身抽取器：不触网，直接给一条候选。"""
-
-        class messages:  # noqa: N801  模仿 SDK 的 client.messages.create
-            @staticmethod
-            def create(**kwargs: object) -> object:
-                import json
-                from types import SimpleNamespace
-
-                payload = {
-                    "memories": [
-                        MemoryCandidate(
-                            mem_key="channel",
-                            mem_value="偏好短信通知",
-                            category="channel_preference",
-                            confidence=0.8,
-                        ).model_dump()
-                    ]
-                }
-                block = SimpleNamespace(type="text", text=json.dumps(payload))
-                return SimpleNamespace(content=[block], usage=None)
+    这里用同步替身 `InlineExtractionQueue` + 注入的抽取器，既不触网也不起线程。
+    """
+    candidate = MemoryCandidate(
+        mem_key="channel",
+        mem_value="偏好短信通知",
+        category="channel_preference",
+        confidence=0.8,
+    )
+    queue = InlineExtractionQueue(memory, extractor=lambda transcript: [candidate])
 
     llm = ScriptedLlm([Understanding(intent="other")])
-    session = _session(engine, llm, memory=memory, enable_memory=True)
-    session._deps.extract_client = StubExtractClient()  # noqa: SLF001
+    session = _session(engine, llm, memory=memory)
+    session._deps.extraction_queue = queue  # noqa: SLF001
     session.send_user("以后请用短信通知我")
     session.close()
 
     record = memory.get(MAIN_USER, "channel")
     assert record is not None
     assert record.mem_value == "偏好短信通知"
-    assert 0.0 < record.confidence <= 1.0
+    assert queue.stats.written == 1
+
+
+def test_persist_does_not_block_on_extraction(engine: Engine, memory: UserMemoryRepo) -> None:
+    """投递必须立即返回：抽取器再慢也不该拖住本轮回复（FR-704）。"""
+    import time
+
+    from cs_agent.memory.jobs import ExtractionQueue
+
+    def slow_extractor(transcript: object) -> list[MemoryCandidate]:
+        time.sleep(1.0)
+        return []
+
+    queue = ExtractionQueue(memory, extractor=slow_extractor)  # type: ignore[arg-type]
+    llm = ScriptedLlm([Understanding(intent="other")])
+    session = _session(engine, llm, memory=memory)
+    session._deps.extraction_queue = queue  # noqa: SLF001
+
+    started = time.perf_counter()
+    session.send_user("随便说点什么")
+    elapsed = time.perf_counter() - started
+    session.close()
+
+    assert elapsed < 0.5, f"persist 等了抽取 {elapsed:.2f}s，说明没走异步"
+    assert queue.drain(timeout=5.0)
+    queue.close()
 
 
 def test_memory_failure_does_not_break_the_turn(engine: Engine) -> None:

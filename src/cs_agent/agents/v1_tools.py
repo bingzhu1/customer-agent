@@ -34,6 +34,7 @@ from cs_agent.graph.memory_store import InMemoryCaseFactsStore
 from cs_agent.graph.nodes import Deps
 from cs_agent.graph.state import AgentState
 from cs_agent.graph.tools import ToolBelt
+from cs_agent.memory.jobs import InlineExtractionQueue
 from cs_agent.memory.user_memory import UserMemoryRepo
 from cs_agent.policy.schema import PolicySet, load_policies
 from cs_agent.rag.provider import default_provider, default_retriever
@@ -83,7 +84,9 @@ class GraphSession(AgentSession):
             # eval 的会话没有 agent.threads 行，CaseFacts 只能进程内保存
             case_store=InMemoryCaseFactsStore(),
             memory=memory,
-            enable_memory_write=enable_memory,
+            # eval 用同步替身：抽取一旦真异步，AgentUnderTest 这种同步接口就观察不到它，
+            # MEM 类用例也就没法确定性断言（memory/jobs.py 的 docstring 里写了同一件事）
+            extraction_queue=InlineExtractionQueue(memory) if enable_memory and memory else None,
         )
         self._graph = build_graph(self._deps)
         self._thread_id = thread_id
