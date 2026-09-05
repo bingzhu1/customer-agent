@@ -94,11 +94,11 @@ prompt caching、记忆压缩与三方对比、人工控制台、混沌测试。
 
 ---
 
-## Phase 4 — 写路径：提议 → 确认 → 执行 · 未开始
+## Phase 4 — 写路径：提议 → 确认 → 执行 · 内核先行 · 负责 P3（内核：actions/ services/）+ P1（interrupt / resume / confirm API）
 
-- [ ] M1 `ActionProposal` + `agent_actions` 生命周期（FR-501/502）+ 幂等键 UNIQUE（FR-503）+ 过期（FR-504）+ 归属（FR-505）
+- [~] M1 `ActionProposal` + 幂等键 + 状态机 + ActionService（FR-501~505）—— P3，2026-09-05 开工，分支仍用 `phase3-policy-engine`
 - [ ] M2 interrupt / resume（FR-601/602）+ `POST /v1/actions/{id}/confirm`
-- [ ] M3 `RefundService(SIMULATED)` 写 `biz.refunds`（FR-506）+ `audit_log` 追加式（FR-507）+ 失败重试（FR-508）
+- [~] M3 `RefundService(SIMULATED)`（FR-506）+ `audit_log` 追加式（FR-507）+ 重试幂等（FR-508）—— P3，与 M1 一起
 - [ ] M4 `escalate_to_human` 创建 human_review 并中断（FR-206）；`create_ticket`（FR-205，P1）
 - [ ] M5 SSE 事件协议 v1（FR-103，§8.3）
 - [ ] M6 outbox 升级点写入 PRD §17（FR-509）；`make eval AGENT=v4`
