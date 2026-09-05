@@ -1290,6 +1290,8 @@ Langfuse trace 命名约定：`thread_id` 为 session，单轮对话为一个 tr
 
 ---
 
+- **幂等窗口为固定整点窗口**：`idempotency_key` 含 `window_start`（整点切开），10:59 与 11:01 的两次同参提议会得到两个 action。金钱副作用由 `UNIQUE(idempotency_key)` + 执行前状态校验兜住，窗口只用来收敛待确认队列；要消除边界毛刺需换滑动窗口（查询不再是纯函数）。见 `actions/proposal.py::refund_window` docstring。
+
 ## 18. 附录
 
 ### 18.1 术语表
