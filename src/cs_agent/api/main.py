@@ -12,6 +12,7 @@ from cs_agent.api.middleware import AuthenticationMiddleware, RequestContextMidd
 from cs_agent.api.routes import ops, v1
 from cs_agent.db.base import get_engine
 from cs_agent.observability.logging import configure_logging, get_logger
+from cs_agent.services.chat import close_extraction_queue
 from cs_agent.settings import get_settings
 
 logger = get_logger(__name__)
@@ -27,6 +28,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         logger.warning("jwt_secret_too_short", length=len(settings.jwt_secret))
     yield
     # 优雅关闭的完整版（SIGTERM → 停止接新请求）是 FR-107，Phase 6 落地
+    close_extraction_queue()
     get_engine().dispose()
     logger.info("app_stopped")
 

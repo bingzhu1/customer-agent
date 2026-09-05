@@ -29,6 +29,7 @@ from cs_agent.graph.nodes import Deps
 from cs_agent.graph.state import AgentState
 from cs_agent.graph.tools import ToolBelt
 from cs_agent.memory.case_facts import CaseFacts
+from cs_agent.memory.jobs import ExtractionQueue
 from cs_agent.memory.user_memory import UserMemoryRepo
 from cs_agent.policy.schema import PolicySet, load_policies
 from cs_agent.rag.provider import default_provider, default_retriever
@@ -49,6 +50,7 @@ HANDOFF_TEXT = "可以为你转接人工客服。"
 _POLICIES: PolicySet | None = None
 _RETRIEVER: PolicyRetriever | None = None
 _MEMORY: UserMemoryRepo | None = None
+_QUEUE: ExtractionQueue | None = None
 
 
 def get_policies() -> PolicySet:
@@ -178,6 +180,16 @@ class ChatService:
             latency_ms=round((time.perf_counter() - started) * 1000, 2),
         )
 
+    def _extraction_queue(self) -> ExtractionQueue | None:
+        """进程级异步抽取队列。生产路径**绝不调 drain()**——那等于把抽取拖回热路径。"""
+        repo = self._memory_repo()
+        if repo is None:
+            return None
+        global _QUEUE
+        if _QUEUE is None:
+            _QUEUE = ExtractionQueue(repo)
+        return _QUEUE
+
     def _memory_repo(self) -> UserMemoryRepo | None:
         """长期记忆走与 RAG 同一个 embedding provider。关掉记忆时返回 None。"""
         if not get_settings().memory_enabled:
@@ -206,7 +218,7 @@ class ChatService:
             # CaseFacts 落 agent.case_state，会话跨轮、跨进程都能续上
             case_store=DbCaseFactsStore(thread_id),
             memory=memory,
-            enable_memory_write=memory is not None,
+            extraction_queue=self._extraction_queue(),
             thread_uuid=thread_id,
         )
         graph = build_graph(deps)
@@ -237,3 +249,11 @@ def _pending_action(state: AgentState) -> PendingActionDraft | None:
         policy_id=verdict.policy_id if verdict is not None else None,
         policy_version=verdict.policy_version if verdict is not None else None,
     )
+
+
+def close_extraction_queue() -> None:
+    """进程退出前回收线程池。由 API 的 lifespan 调用。"""
+    global _QUEUE
+    if _QUEUE is not None:
+        _QUEUE.close()
+        _QUEUE = None
