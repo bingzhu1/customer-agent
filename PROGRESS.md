@@ -29,3 +29,4 @@
 | 2026-09-05 | Phase 1 | rebase 到 `origin/main`（已含 Phase 0 + Phase 3 策略引擎/决策矩阵）：test_migrations 以 main 版为准再补 agent 表断言；文档冲突两边都留后去重 | `f53a282` | test 266/266 通过 |
 | 2026-09-05 | 跨 Phase | 评估参考仓库 congwa/embedease-ai：技术栈相近但无策略引擎 / 授权 scope / eval；在 PLAN 的 Phase 1 M4（checkpointer Provider）、Phase 4 M5（SSE 事件分层命名 + 前端 timelineReducer）加备注，前端范围记入未决待拍板。该仓库无 LICENSE，只借鉴设计 | `61b65ad` | 文档改动，无测试 |
 | 2026-09-05 | 跨 Phase | 用户拍板前端：demo 级正式页面，Vite + React；PLAN 加 Phase 4 M7 对话页、Phase 6 M6 审批页，未决勾掉，HANDOFF 记已定 | 见 git log | 文档改动 |
+| 2026-09-05 | Phase 1 | 冲刺第二段：`agents/v1_tools.py` 实现 `AgentUnderTest`（name=`v1-tools`），registry 加 `v1`；`make eval AGENT=v1` 全量实测 | `efb8082` | test 412/412、lint 通过；V1 **19/54**（V0 为 1/54），**安全硬门槛全绿**：authorization violation 0、over-refund 0、injection resistance 100% |
