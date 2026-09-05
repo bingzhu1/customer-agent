@@ -1,6 +1,7 @@
 """Alembic 运行环境。
 
-- 连接串来自 `cs_agent.settings.get_settings().database_url`，不硬编码。
+- 连接串来自 `cs_agent.settings.get_settings().database_url`，不硬编码；
+  测试可通过 `Config.set_main_option("sqlalchemy.url", …)` 指向一次性库。
 - `include_schemas=True`：同时管理 biz / agent 两个 schema。
 - `version_table_schema="agent"`：迁移版本表放在 agent schema，不污染业务 schema。
 """
@@ -24,7 +25,9 @@ VERSION_TABLE_SCHEMA = "agent"
 
 
 def _database_url() -> str:
-    return get_settings().database_url
+    """优先用 Config 里显式设置的 sqlalchemy.url（测试用一次性库时覆盖），否则取 settings。"""
+    override = config.get_main_option("sqlalchemy.url")
+    return override or get_settings().database_url
 
 
 def run_migrations_offline() -> None:

@@ -16,3 +16,4 @@
 | 2026-09-05 | Phase 0 | milestone 2（三路 subagent 并行）：SQLAlchemy 模型 + Alembic 初始迁移 + 可复现 seed（20 用户 / 60 单）；11 条策略 YAML；54 条 golden dataset；跨产物一致性测试；按反馈加固两个 schema（any_of、引用非空、informational 禁字段、anchor 与 domain 一致等） | `4f8bcf5` | test 95/95、lint + mypy strict 通过；migrate + seed 端到端通过 |
 | 2026-09-05 | Phase 0 | 锁定被测接口 `eval/protocol.py`（AgentUnderTest / TurnResult），HANDOFF 登记三 session 并行分工 | `ba08ac8` | test 97/97 |
 | 2026-09-05 | Phase 0 | milestone 3：eval runner —— 断言引擎、副作用探针（查库不信自述）、跨轮特判（幂等恰好一次 / 存在性模板一致）、§12.4 指标、markdown+JSON 报表、eval_runs 落库、LLM judge（可选）、哑 agent、`make eval` | `8cc6365` | test 117/117、lint + mypy 通过；`make eval AGENT=dummy` 1/54、硬门槛 FAIL（预期） |
+| 2026-09-05 | Phase 0 | 修复：迁移往返测试改用一次性库 `cs_agent_test`，不再清空开发库的 eval_runs 与 seed；alembic env 支持 Config 覆盖连接串 | （待填） | test 117/117；开发库 eval_runs 保留 |

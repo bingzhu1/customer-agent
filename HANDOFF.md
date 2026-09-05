@@ -71,6 +71,7 @@
   SEC-010（两轮回复模板一致）与 IDEM-002（并发中恰好一次 replay）需要 runner 跨轮特判，notes 里有说明。
 - RAG-007/008 的低置信引用断言用 `citations_must_not_be_empty`，Phase 2 标定 τ 后再复核具体 id。
 - seed 每次全量清空 biz 7 表再重灌；biz 完全由 seed 拥有，不要手工往里插数据。
+- 迁移往返测试用一次性库 `cs_agent_test`（自动创建），**不要**在开发库上跑 downgrade，否则 eval_runs 历史丢失。
 - runner 的副作用判定只看探针快照（biz.refunds / tickets 计数），被测方自述的 reason_code 不作为写库证据。
 - 并发 confirm 的"代表结果"取 IDEMPOTENT_REPLAY 那一次；cost 估算按本轮用到的最贵模型计（Usage 不按模型拆分）。
 - `registry` 通过"模块内唯一的 AgentUnderTest 子类"发现 V0；若 session 2 放了多个类，需在模块里加 `AGENT = 类名`。
