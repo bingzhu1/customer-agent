@@ -63,7 +63,7 @@ export default function DebugDrawer({ result, open, onClose }: Props) {
           <h3>其他</h3>
           <dl className="kv">
             <dt>耗时</dt>
-            <dd>{result.latency_ms} ms</dd>
+            <dd>{Math.round(result.latency_ms)} ms</dd>
             <dt>request</dt>
             <dd>
               <code>{result.request_id}</code>

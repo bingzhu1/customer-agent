@@ -90,7 +90,14 @@ Phase 4 接 SSE 时加 `token` / `tool_started` 等事件，**state 与条目形
 npm run test    # vitest：reducer 单测，六种 decision 各一条 + 错误
 npm run lint    # eslint
 npm run build   # tsc -b && vite build
+
+# 对真实后端的联调冒烟（默认跳过；要先在仓库根 APP_ENV=dev 起服务）
+VITE_INTEGRATION=1 npm run test
 ```
+
+联调测试会真的调模型（一轮约 10–35 秒），断言只挑契约层面的点：
+82913 → `REQUIRE_CONFIRMATION` / `POLICY_SATISFIED`、`amount="89.00"`、
+`action_id` 为 null、404 信封被解析成 `ApiError`。
 
 ## 不做
 
