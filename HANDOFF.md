@@ -98,6 +98,8 @@
 - seed 每次全量清空 biz 7 表再重灌；biz 完全由 seed 拥有，不要手工往里插数据。
 - **跑一次 `make test` 会把主库 `agent.policy_chunks` 灌成 fake 向量**（test_agent_v3 / test_api_threads 的 fixture 直接写 DATABASE_URL 主库），demo 服务的真 RAG 会立刻失效（分数掉到 0.05）。P1 修隔离前，测试后必须 `uv run python -m cs_agent.rag.ingest` 重灌 openai 向量。
 - `.env` 里 `EMBEDDING_PROVIDER=openai`、`RAG_TAU_LOW=0.48`、`RAG_TAU_HIGH=0.50`（0.60 会切掉一半正样本；openai 下 82913 退款问句 max_score≈0.57）；fake provider 的 τ 是代码常量 0.28/0.40，不走 settings。
+- **Anthropic 余额耗尽表现为全局 DEGRADE / DEPENDENCY_UNAVAILABLE**（400 "credit balance is too low"），eval 报表会看起来像"全挂"。2026-09-05 晚 V5 首跑因此无效已删。跑 eval 前先 `uv run python -c` 打一次 Haiku 探活。
+- **两处静默降级**（P2 提醒）：`calibrate_tau.py --rewrite` 在 Haiku 失败时回退到确定性 query 且不报错，此时 τ 不可采用（脚本将加 source 列防呆）；`memory_demo.py --real` 抽取失败会被队列吞掉，演示用默认模式（确定性假抽取器，不触网）。
 - **同一版本两次 eval 结果可能不同**（V1：19/54 vs 17/54）。安全类指标不接受随机：任何依赖 LLM 结构化输出才能触发的拒绝（如冒充身份）都必须有不依赖 LLM 的确定性兜底。非 ANSWER 终态的回复必须逐字用 decision/templates，LLM 不得改写。
 - **分支同步用 `git merge origin/main`，不要 rebase**：rebase 重写历史会让已合并的提交再次出现冲突（P1 踩过三次）。
 - Phase 1 的 API 测试从 `.env` 读 `JWT_SECRET`，本地 `.env` 缺它会报 `HMAC key must not be empty`；已从 `.env.example` 补齐。测试不该依赖 `.env`，记入 PLAN 待补。
