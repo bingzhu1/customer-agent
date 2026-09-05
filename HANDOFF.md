@@ -48,7 +48,7 @@
 |---|---|---|---|
 | master（本 session） | `phase0-eval-foundation` / 主目录 | `src/cs_agent/eval/**`（protocol 除外，改动需声明）、`tests/test_eval_*`、Makefile 的 eval target、`eval_reports/`、PROGRESS / HANDOFF | `cs_agent` |
 | session 2：V0 baseline | `phase0-v0-baseline` / `../ca-v0` | **已交付并合入**，session 可关闭 | — |
-| session 4：Phase 3 → Phase 4 内核 | `phase3-policy-engine` / `../ca-phase3` | `policy/facts.py`、`policy/engine.py`、`decision/**`、`actions/**`、`services/refund.py`、对应 tests | `cs_agent_p3` |
+| session 4：Phase 3 → Phase 4 内核 → 写路径闭环 | `phase3-policy-engine` / `../ca-phase3` | `policy/facts.py`、`policy/engine.py`、`decision/**`、`actions/**`、`services/refund.py`、`services/human_review.py`、对应 tests；**临时借用 P1 的 4 个文件做 confirm API**（`services/chat.py`、`api/schemas.py`、`api/routes/v1.py`、`api/errors.py`，P1 承诺此期间不动） | `cs_agent_p3` |
 | session 5：Phase 2 → Phase 5 记忆 | `phase2-rag` / `../ca-phase2` | `rag/**`（除 `rag/provider.py`，该文件为 P1 新建、归 P1）、`memory/**`、`scripts/calibrate_tau.py`、`docs/adr/0007` | `cs_agent_p2` |
 | session 6：前端 | `frontend-chat` / `../ca-frontend` | `frontend/**` | 无 |
 | session 3：Phase 1 | `phase1-skeleton` / `../ca-phase1` | Phase 1 全部范围（用户已在该 session 内验收 2 个 milestone：0002 迁移 + AuthContext + Repository；FastAPI / JWT / 可观测性，新依赖 fastapi / uvicorn / pyjwt / prometheus-client / httpx 已获用户同意）。共享文件改动：settings.py 加 jwt_*；test_migrations 合并时以 master 的一次性库版为准 | `cs_agent_p1` |
@@ -99,6 +99,7 @@
 - **跑一次 `make test` 会把主库 `agent.policy_chunks` 灌成 fake 向量**（test_agent_v3 / test_api_threads 的 fixture 直接写 DATABASE_URL 主库），demo 服务的真 RAG 会立刻失效（分数掉到 0.05）。P1 修隔离前，测试后必须 `uv run python -m cs_agent.rag.ingest` 重灌 openai 向量。
 - `.env` 里 `EMBEDDING_PROVIDER=openai`、`RAG_TAU_LOW=0.48`、`RAG_TAU_HIGH=0.50`（0.60 会切掉一半正样本；openai 下 82913 退款问句 max_score≈0.57）；fake provider 的 τ 是代码常量 0.28/0.40，不走 settings。
 - **同一版本两次 eval 结果可能不同**（V1：19/54 vs 17/54）。安全类指标不接受随机：任何依赖 LLM 结构化输出才能触发的拒绝（如冒充身份）都必须有不依赖 LLM 的确定性兜底。非 ANSWER 终态的回复必须逐字用 decision/templates，LLM 不得改写。
+- **分支同步用 `git merge origin/main`，不要 rebase**：rebase 重写历史会让已合并的提交再次出现冲突（P1 踩过三次）。
 - Phase 1 的 API 测试从 `.env` 读 `JWT_SECRET`，本地 `.env` 缺它会报 `HMAC key must not be empty`；已从 `.env.example` 补齐。测试不该依赖 `.env`，记入 PLAN 待补。
 - 迁移往返测试用一次性库 `cs_agent_test_<仓库路径哈希>`，每次先 DROP 再 CREATE；不同 worktree 迁移 head 不同，**绝不能共用同名测试库**（踩过：Phase 1 把共用库升到 0002，main 找不到该版本）。
 - runner 的副作用判定只看探针快照（biz.refunds / tickets 计数），被测方自述的 reason_code 不作为写库证据。
