@@ -31,7 +31,19 @@ logger = get_logger(__name__)
 RequestHandler = Callable[[Request], Awaitable[Response]]
 
 # 无需认证的路径（PRD §8.1：health / ready / metrics 无鉴权，metrics 靠内网隔离）
-PUBLIC_PATHS = frozenset({"/health", "/ready", "/metrics", "/docs", "/redoc", "/openapi.json"})
+PUBLIC_PATHS = frozenset(
+    {
+        "/health",
+        "/ready",
+        "/metrics",
+        "/docs",
+        "/redoc",
+        "/openapi.json",
+        # dev-only 的签发接口：不放行就拿不到第一个 token。
+        # 该路由只在 APP_ENV=dev 时注册，生产里它根本不存在（见 routes/v1.py）。
+        "/v1/dev/token",
+    }
+)
 
 REQUEST_ID_HEADER = "X-Request-ID"
 _MAX_REQUEST_ID_LEN = 64

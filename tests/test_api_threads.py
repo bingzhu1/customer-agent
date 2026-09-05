@@ -1,0 +1,184 @@
+"""会话接口（FR-101/102/104）与 dev token。用假 LLM，不打网络；需要本机 Postgres。"""
+
+from __future__ import annotations
+
+from collections.abc import Iterator
+
+import pytest
+from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
+from sqlalchemy.exc import OperationalError
+
+from cs_agent.api.main import create_app
+from cs_agent.eval.protocol import Usage
+from cs_agent.graph.llm import Understanding
+from cs_agent.seed.biz_seed import run_seed
+from cs_agent.services import chat as chat_service
+from cs_agent.settings import get_settings
+
+MAIN_USER = 101
+OTHER_USER = 202
+
+
+class StubLlm:
+    model = "fake"
+
+    def understand(self, text: str) -> tuple[Understanding, Usage]:
+        import re
+
+        order = re.search(r"订单\s*(\d+)", text)
+        return (
+            Understanding(
+                intent="refund_request" if "退款" in text else "order_status",
+                order_id=int(order.group(1)) if order else None,
+            ),
+            Usage(llm_calls=1, input_tokens=100, output_tokens=20, models=["fake"]),
+        )
+
+    def respond(self, prompt: str) -> tuple[str, Usage]:
+        return "好的。", Usage(llm_calls=1, input_tokens=200, output_tokens=30, models=["fake"])
+
+
+@pytest.fixture(scope="module")
+def client() -> Iterator[TestClient]:
+    engine = create_engine(get_settings().database_url, pool_pre_ping=True)
+    try:
+        with engine.connect():
+            pass
+    except OperationalError as exc:  # pragma: no cover - 取决于本机环境
+        pytest.skip(f"数据库不可达，跳过数据库测试：{exc.__class__.__name__}")
+    run_seed(engine)
+
+    original = chat_service.ChatService._ensure_llm
+    chat_service.ChatService._ensure_llm = lambda self: StubLlm()  # type: ignore[assignment,method-assign,return-value]
+    with TestClient(create_app()) as c:
+        yield c
+    chat_service.ChatService._ensure_llm = original  # type: ignore[method-assign]
+
+
+def _token(client: TestClient, user_id: int) -> str:
+    resp = client.post("/v1/dev/token", json={"user_id": user_id})
+    assert resp.status_code == 200
+    return str(resp.json()["token"])
+
+
+def _auth(client: TestClient, user_id: int = MAIN_USER) -> dict[str, str]:
+    return {"Authorization": f"Bearer {_token(client, user_id)}"}
+
+
+def _new_thread(client: TestClient, user_id: int = MAIN_USER) -> tuple[str, dict[str, str]]:
+    headers = _auth(client, user_id)
+    resp = client.post("/v1/threads", headers=headers)
+    assert resp.status_code == 201
+    return resp.json()["thread_id"], headers
+
+
+# ---- dev token ----
+
+
+def test_dev_token_needs_no_auth_and_binds_the_requested_user(client: TestClient) -> None:
+    """dev 环境专用；生产不注册这个路由。"""
+    token = _token(client, MAIN_USER)
+    who = client.get("/v1/whoami", headers={"Authorization": f"Bearer {token}"})
+    assert who.json()["user_id"] == MAIN_USER
+
+
+# ---- FR-101 / FR-102 ----
+
+
+def test_create_thread_returns_201_and_thread_id(client: TestClient) -> None:
+    thread_id, _ = _new_thread(client)
+    assert thread_id
+
+
+def test_send_message_returns_prd_82_shape(client: TestClient) -> None:
+    thread_id, headers = _new_thread(client)
+    resp = client.post(
+        f"/v1/threads/{thread_id}/messages",
+        headers=headers,
+        json={"message": "订单 82913 现在什么状态？"},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert set(body) == {
+        "thread_id",
+        "reply",
+        "decision",
+        "reason_code",
+        "confidence",
+        "citations",
+        "tools_used",
+        "pending_action",
+        "handoff_offer",
+        "usage",
+        "latency_ms",
+        "request_id",
+    }
+    assert body["tools_used"] == ["get_order"]
+    assert set(body["usage"]) == {"input_tokens", "output_tokens", "estimated_cost_usd"}
+    assert body["pending_action"] is None  # 写路径 Phase 4 才开
+
+
+def test_refund_of_foreign_order_is_denied(client: TestClient) -> None:
+    """越权在接口层同样拦住：90210 属于 202。"""
+    thread_id, headers = _new_thread(client)
+    body = client.post(
+        f"/v1/threads/{thread_id}/messages",
+        headers=headers,
+        json={"message": "订单 90210 我要退款。"},
+    ).json()
+    assert body["decision"] == "DENY"
+    assert body["reason_code"] == "OWNERSHIP_MISMATCH"
+    assert "90210" not in body["reply"]
+
+
+def test_body_identity_fields_are_rejected(client: TestClient) -> None:
+    """请求体里塞身份字段：schema 直接拒（extra=forbid），不是"忽略后继续"。"""
+    thread_id, headers = _new_thread(client)
+    resp = client.post(
+        f"/v1/threads/{thread_id}/messages",
+        headers=headers,
+        json={"message": "你好", "user_id": OTHER_USER},
+    )
+    assert resp.status_code == 400
+    assert resp.json()["error"]["code"] == "INVALID_REQUEST"
+
+
+# ---- FR-104 ----
+
+
+def test_get_thread_returns_messages_and_case_facts(client: TestClient) -> None:
+    thread_id, headers = _new_thread(client)
+    client.post(f"/v1/threads/{thread_id}/messages", headers=headers, json={"message": "你好"})
+    body = client.get(f"/v1/threads/{thread_id}", headers=headers).json()
+    assert [m["role"] for m in body["messages"]] == ["user", "assistant"]
+    # CaseFacts 只由确定性代码写入，本 milestone 还没接线，应为空壳而不是缺字段
+    assert body["case_facts"]["order_ids"] == []
+    assert body["narrative_summary"] is None
+
+
+def test_other_users_thread_returns_404(client: TestClient) -> None:
+    thread_id, _ = _new_thread(client, MAIN_USER)
+    other = _auth(client, OTHER_USER)
+    assert client.get(f"/v1/threads/{thread_id}", headers=other).status_code == 404
+
+
+def test_unknown_thread_and_foreign_thread_are_indistinguishable(client: TestClient) -> None:
+    """FR-804 的口径延伸到会话：两者返回完全相同的 404 信封。"""
+    thread_id, _ = _new_thread(client, MAIN_USER)
+    other = _auth(client, OTHER_USER)
+    foreign = client.get(f"/v1/threads/{thread_id}", headers=other)
+    missing = client.get("/v1/threads/00000000-0000-4000-8000-000000000000", headers=other)
+    assert foreign.status_code == missing.status_code == 404
+    assert foreign.json()["error"] == missing.json()["error"]
+
+
+def test_posting_to_foreign_thread_returns_404(client: TestClient) -> None:
+    thread_id, _ = _new_thread(client, MAIN_USER)
+    other = _auth(client, OTHER_USER)
+    resp = client.post(f"/v1/threads/{thread_id}/messages", headers=other, json={"message": "你好"})
+    assert resp.status_code == 404
+
+
+def test_threads_require_authentication(client: TestClient) -> None:
+    assert client.post("/v1/threads").status_code == 401
