@@ -1,10 +1,14 @@
 /**
  * 对**真实后端**的联调冒烟测试：验证 client.ts 的请求体与解析和后端实际契约一致。
  *
- * 默认跳过——它要连 localhost:8000，还会真的调模型（一轮约 30 秒、几分钱）。
+ * 默认跳过——它要连 localhost:8000，还会真的调模型（一轮约 10–30 秒、几分钱）。
  * 跑法：先在仓库根 `make serve`（APP_ENV=dev），再
  *
- *   VITE_INTEGRATION=1 npm run test
+ *   VITE_INTEGRATION=1        npm run test   # 只读：不写库
+ *   VITE_INTEGRATION_WRITE=1  npm run test   # 额外跑确认退款（会真的写 biz.refunds）
+ *
+ * **写用例默认关掉是有原因的**：demo 与 eval 共用同一个库，确认退款会被评估的
+ * 副作用探针记成用例副作用，把 over-refund 指标污染掉。评估在跑时不要开这个开关。
  *
  * 断言只挑"契约层面会让前端渲染错"的点，不断言模型措辞。
  */
@@ -15,7 +19,9 @@ import { createHttpClient } from './client'
 import { ApiError } from './types'
 
 const BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:8000'
-const RUN = import.meta.env.VITE_INTEGRATION === '1'
+const RUN = import.meta.env.VITE_INTEGRATION === '1' || import.meta.env.VITE_INTEGRATION_WRITE === '1'
+/** 写路径用例：会在共享库里真的落一笔退款，必须显式开 */
+const RUN_WRITE = import.meta.env.VITE_INTEGRATION_WRITE === '1'
 
 describe.skipIf(!RUN)('client.ts ↔ 真实后端', () => {
   let token: string | null = null
@@ -63,8 +69,8 @@ describe.skipIf(!RUN)('client.ts ↔ 真实后端', () => {
     120_000,
   )
 
-  it(
-    '确认退款闭环：回执带金额与 simulated，再确认一次是幂等重放',
+  it.skipIf(!RUN_WRITE)(
+    '确认退款闭环：回执带金额与 simulated，再确认一次是幂等重放（写库）',
     async () => {
       const { thread_id } = await client.createThread()
       const turn = await client.sendMessage(thread_id, '订单 82913 我要退款。')
