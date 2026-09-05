@@ -4,6 +4,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware import Middleware
 
 from cs_agent.api.errors import register_exception_handlers
@@ -37,8 +38,18 @@ def create_app() -> FastAPI:
         title="cs-agent",
         version="0.1.0",
         lifespan=lifespan,
-        # 列表顺序即由外到内：request_id 必须包住认证，401 也要有 request_id 与指标
+        # 列表顺序即由外到内：CORS 必须在最外层（预检请求不带 token，不能被认证拦掉），
+        # 之后 request_id 包住认证，401 也要有 request_id 与指标
         middleware=[
+            Middleware(
+                CORSMiddleware,
+                allow_origins=get_settings().cors_origin_list,
+                allow_credentials=True,
+                allow_methods=["GET", "POST", "OPTIONS"],
+                # 前端要带 Authorization；X-Request-ID 让它能把请求和后端日志对上
+                allow_headers=["Authorization", "Content-Type", "X-Request-ID"],
+                expose_headers=["X-Request-ID"],
+            ),
             Middleware(RequestContextMiddleware),
             Middleware(AuthenticationMiddleware),
         ],

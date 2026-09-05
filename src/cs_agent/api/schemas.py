@@ -43,6 +43,31 @@ class UsageOut(_Strict):
     estimated_cost_usd: float
 
 
+class PendingActionSummary(_Strict):
+    """待确认动作的金额明细。数值来自业务库，不来自对话。"""
+
+    order_id: int | None = None
+    amount: str | None = None
+    currency: str | None = None
+
+
+class PendingActionOut(_Strict):
+    """待确认的写操作（PRD §8.3 `requires_confirmation` 事件的字段）。
+
+    Phase 4 之前**不落 `agent_actions` 表**，因此 `action_id` / `confirm_url` /
+    `expires_at` 恒为 null——前端可以据此渲染确认卡片但把按钮置灰。
+    绝不在这里编一个假的 action_id：那会让"确认"指向一个不存在的动作。
+    """
+
+    action_id: str | None = None
+    type: str
+    summary: PendingActionSummary
+    policy_id: str | None = None
+    policy_version: int | None = None
+    confirm_url: str | None = None
+    expires_at: datetime | None = None
+
+
 class MessageResponse(_Strict):
     """PRD §8.2 的非流式响应体。"""
 
@@ -53,8 +78,9 @@ class MessageResponse(_Strict):
     confidence: Literal["low", "normal"]
     citations: list[CitationOut]
     tools_used: list[str]
-    #: 写路径 Phase 4 才开；在那之前恒为 null（红线 2：LLM 不直接触发写操作）
-    pending_action: None = None
+    #: 决策为 REQUIRE_CONFIRMATION 时给出结构；写路径 Phase 4 才开，
+    #: 在那之前 action_id / confirm_url / expires_at 为 null（红线 2）
+    pending_action: PendingActionOut | None = None
     handoff_offer: str | None
     usage: UsageOut
     latency_ms: float

@@ -93,6 +93,9 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next: RequestHandler) -> Response:
         if request.url.path in PUBLIC_PATHS:
             return await call_next(request)
+        if request.method == "OPTIONS":
+            # CORS 预检不带 Authorization，拦掉它等于关掉跨域
+            return await call_next(request)
 
         try:
             token = parse_bearer(request.headers.get("Authorization"))

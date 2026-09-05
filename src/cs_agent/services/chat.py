@@ -54,6 +54,18 @@ def get_policies() -> PolicySet:
 
 
 @dataclass(frozen=True, slots=True)
+class PendingActionDraft:
+    """待确认动作的草稿：**只是提议，没有落库**（红线 2，Phase 4 才执行）。"""
+
+    type: str
+    order_id: int | None
+    amount: str | None
+    currency: str | None
+    policy_id: str | None
+    policy_version: int | None
+
+
+@dataclass(frozen=True, slots=True)
 class TurnOutcome:
     """一轮对话的结果。字段与 PRD §8.2 的响应体一一对应。"""
 
@@ -65,6 +77,7 @@ class TurnOutcome:
     citations: list[Citation]
     tools_used: list[str]
     handoff_offer: str | None
+    pending_action: PendingActionDraft | None
     usage: Usage
     latency_ms: float
 
@@ -146,6 +159,7 @@ class ChatService:
             citations=list(state.get("citations") or []),
             tools_used=[call.name for call in state.get("tool_calls") or []],
             handoff_offer=HANDOFF_TEXT if decision.outcome in HANDOFF_OUTCOMES else None,
+            pending_action=_pending_action(state),
             usage=state.get("usage") or Usage(),
             latency_ms=round((time.perf_counter() - started) * 1000, 2),
         )
@@ -173,3 +187,20 @@ class ChatService:
         if self._llm is None:
             self._llm = Llm() if get_settings().llm_configured else FallbackLlm()
         return self._llm
+
+
+def _pending_action(state: AgentState) -> PendingActionDraft | None:
+    """只有 REQUIRE_CONFIRMATION 才有待确认动作。金额取自订单，不取自用户说法。"""
+    decision = state["decision"]
+    if decision.outcome is not DecisionOutcome.REQUIRE_CONFIRMATION:
+        return None
+    order = state.get("order") or {}
+    verdict = state.get("verdict")
+    return PendingActionDraft(
+        type="refund",
+        order_id=order.get("order_id"),
+        amount=order.get("total_amount"),
+        currency=order.get("currency"),
+        policy_id=verdict.policy_id if verdict is not None else None,
+        policy_version=verdict.policy_version if verdict is not None else None,
+    )

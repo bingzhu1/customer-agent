@@ -182,3 +182,69 @@ def test_posting_to_foreign_thread_returns_404(client: TestClient) -> None:
 
 def test_threads_require_authentication(client: TestClient) -> None:
     assert client.post("/v1/threads").status_code == 401
+
+
+# ---- 前端对接（CORS / pending_action / dev token 字段名）----
+
+
+def test_cors_preflight_allows_vite_dev_origin(client: TestClient) -> None:
+    """预检请求不带 token，必须不被认证中间件拦掉。"""
+    resp = client.options(
+        "/v1/threads",
+        headers={
+            "Origin": "http://localhost:5173",
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "authorization,content-type",
+        },
+    )
+    assert resp.status_code == 200
+    assert resp.headers["access-control-allow-origin"] == "http://localhost:5173"
+    assert "authorization" in resp.headers["access-control-allow-headers"].lower()
+
+
+def test_cors_exposes_request_id_header(client: TestClient) -> None:
+    resp = client.get("/health", headers={"Origin": "http://localhost:5173"})
+    assert "x-request-id" in resp.headers["access-control-expose-headers"].lower()
+
+
+def test_dev_token_response_field_is_token(client: TestClient) -> None:
+    body = client.post("/v1/dev/token", json={"user_id": MAIN_USER}).json()
+    assert set(body) == {"token", "token_type", "expires_in_minutes"}
+
+
+def test_pending_action_shape_on_require_confirmation(client: TestClient) -> None:
+    """82913：12 天前签收、未使用、89 元 → REQUIRE_CONFIRMATION，给出 §8.3 结构。"""
+    thread_id, headers = _new_thread(client)
+    body = client.post(
+        f"/v1/threads/{thread_id}/messages",
+        headers=headers,
+        json={"message": "订单 82913 我要退款。"},
+    ).json()
+    assert body["decision"] == "REQUIRE_CONFIRMATION"
+    action = body["pending_action"]
+    assert set(action) == {
+        "action_id",
+        "type",
+        "summary",
+        "policy_id",
+        "policy_version",
+        "confirm_url",
+        "expires_at",
+    }
+    assert action["type"] == "refund"
+    assert action["summary"] == {"order_id": 82913, "amount": "89.00", "currency": "CNY"}
+    assert action["policy_id"] == "REFUND-STD-001"
+    # 写路径未开：绝不编造 action_id / confirm_url，否则"确认"会指向不存在的动作
+    assert action["action_id"] is None
+    assert action["confirm_url"] is None
+
+
+def test_no_pending_action_when_denied(client: TestClient) -> None:
+    thread_id, headers = _new_thread(client)
+    body = client.post(
+        f"/v1/threads/{thread_id}/messages",
+        headers=headers,
+        json={"message": "订单 82915 我要退款。"},
+    ).json()
+    assert body["decision"] == "DENY"
+    assert body["pending_action"] is None

@@ -22,6 +22,8 @@ from cs_agent.api.schemas import (
     DevTokenResponse,
     MessageOut,
     MessageResponse,
+    PendingActionOut,
+    PendingActionSummary,
     SendMessageRequest,
     ThreadDetailResponse,
     UsageOut,
@@ -98,6 +100,7 @@ def _to_message_response(outcome: TurnOutcome, request_id: str | None) -> Messag
             for c in outcome.citations
         ],
         tools_used=outcome.tools_used,
+        pending_action=_to_pending_action(outcome),
         handoff_offer=outcome.handoff_offer,
         usage=UsageOut(
             input_tokens=outcome.usage.input_tokens,
@@ -108,6 +111,21 @@ def _to_message_response(outcome: TurnOutcome, request_id: str | None) -> Messag
         ),
         latency_ms=outcome.latency_ms,
         request_id=request_id,
+    )
+
+
+def _to_pending_action(outcome: TurnOutcome) -> PendingActionOut | None:
+    """action_id / confirm_url / expires_at 留空：Phase 4 落 agent_actions 后才有真值。"""
+    draft = outcome.pending_action
+    if draft is None:
+        return None
+    return PendingActionOut(
+        type=draft.type,
+        summary=PendingActionSummary(
+            order_id=draft.order_id, amount=draft.amount, currency=draft.currency
+        ),
+        policy_id=draft.policy_id,
+        policy_version=draft.policy_version,
     )
 
 
