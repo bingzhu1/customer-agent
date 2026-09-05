@@ -65,13 +65,13 @@ prompt caching、记忆压缩与三方对比、人工控制台、混沌测试。
 
 ---
 
-## Phase 2 — RAG + 策略事实来源 · 未开始 · 前置：未决问题 1（embedding provider）
+## Phase 2 — RAG + 策略事实来源 · 分支 `phase2-rag` · 负责 P2 · provider 已定：OpenAI text-embedding-3-small
 
-- [ ] M1 YAML → chunk 生成器（rule card + FAQ 切分，metadata 含 policy_id / version / anchor）（FR-301）
-- [ ] M2 embedding provider 接入 + pgvector `vector(1536)` 迁移 + HNSW（替换 P1 的 Text 占位列）
-- [ ] M3 `search_policy` 真实实现：查询改写（FR-302）、top-k、τ 门控为配置项（FR-303）
-- [ ] M4 引用后置校验（FR-304/305）、低置信声明模板（FR-308）、无结果转人工（FR-307）
-- [ ] M5 τ_low / τ_high 标定，写入 ADR-0007（FR-309）；`protocol.TurnResult` 加 `retrieved` 字段以算 recall@k
+- [x] M1 YAML → chunk 生成器（FR-301）· `0180ce7`，已合 main `2ed4e30`
+- [x] M2 OpenAI embeddings + FakeEmbeddings + 迁移 0003 pgvector/HNSW + ingest · `0180ce7`
+- [~] M3 PolicyRetriever（top-k + τ 门控 band）已交付；`search_policy` 工具换用它 —— P1 冲刺后接；查询改写（FR-302）未做
+- [~] M4 引用后置校验纯函数 `rag/citations.py` 已交付；接进 respond 节点 —— P1；低置信模板已在 decision/templates（P3）
+- [~] M5 `scripts/calibrate_tau.py` 已交付；真跑标定 + 回填 ADR-0007 —— P2；`protocol.TurnResult.retrieved` —— master
 - [ ] M6 `make eval AGENT=v2`
 
 **DoD**
@@ -104,6 +104,7 @@ prompt caching、记忆压缩与三方对比、人工控制台、混沌测试。
 - [ ] M5 SSE 事件协议 v1（FR-103，§8.3）
   > 备注（2026-09-05）：事件命名与 payload 可参考 embedease-ai `backend/app/schemas/events.py`——按命名空间分层（`meta.start` / `tool.start` / `tool.end` / `assistant.final` / `model.fallback`），每个事件配 TypedDict payload；前端消费侧参考其 `frontend/packages/chat-sdk/src/timeline/reducer.ts`（纯 reducer 把事件流折成时间线，可脱离浏览器测试）。我方 §8.3 的 `requires_confirmation` / `requires_human` 是终结事件，这一点保留。同样只借鉴设计。
 - [ ] M6 outbox 升级点写入 PRD §17（FR-509）；`make eval AGENT=v4`
+- [ ] M7 前端对话页（demo 级）：`web/` 目录 Vite + React + TS，无组件库；fetch 读 SSE + AbortController，纯 `timelineReducer` 折事件为时间线并单测；页面显式渲染 decision / reason_code / 引用 / 确认按钮（打 `POST /v1/actions/{id}/confirm`）。不做：登录页（token 粘贴框即可）、主题、富文本、历史会话列表
 
 **DoD**
 - [ ] 重复退款 = 0（IDEM-001/002 通过）；审计日志能回答"谁、何时、依据哪条规则、结果如何"
@@ -132,6 +133,7 @@ prompt caching、记忆压缩与三方对比、人工控制台、混沌测试。
 - [ ] M3 Prometheus + Grafana 面板（FR-903/910）；成本与延迟 SLO；`Usage` 改为逐次调用列表以按模型拆成本
 - [ ] M4 故障注入测试（关 pgvector / LLM 超时 / 连续失败）
 - [ ] M5 `make eval AGENT=v6` 全表；README 含 V0→V6 演进表、架构图、"真正上线还缺什么"
+- [ ] M6 前端审批页（demo 级）：复用 `web/`，一张 human-review 队列表 + approve / edit / reject 三个按钮，操作后回到对话页看恢复结果。不做：热度排序、通知、多客服在线状态
 
 **DoD**
 - [ ] 混沌测试通过；$0.05/session 成本门槛实测（不达标则修订目标并说明原因）
@@ -146,10 +148,12 @@ prompt caching、记忆压缩与三方对比、人工控制台、混沌测试。
 - [ ] `protocol.TurnResult.retrieved` 字段 —— Phase 2 前
 - [ ] `protocol.Usage` 逐次调用列表 —— Phase 6 前
 - [ ] `tests/test_api_auth.py` 不应依赖 `.env` 的 `JWT_SECRET`，应在 fixture 里覆盖 settings —— P1 顺手修
-- [ ] 前端范围：PRD §2 只要求"最小调试页"（Phase 6）；用户 2026-09-05 提出要做前端，范围 / 技术栈 / 所属 Phase 待拍板。可借鉴 embedease-ai `frontend/packages/chat-sdk`（fetch 流 + AbortController + 纯 timelineReducer）与 `frontend/app/support` 客服工作台（热度排序、接管）的设计；其管理后台 / 嵌入组件 / 商品卡片与我方无关
+- [x] 前端范围 —— 用户 2026-09-05 拍板：正式页面但 demo 级、Vite + React、对话页进 Phase 4 M7、审批页进 Phase 6 M6；PRD §2 "仅最小调试页" 待改 v1.2。可借鉴 embedease-ai `frontend/packages/chat-sdk`（fetch 流 + AbortController + 纯 timelineReducer）与 `frontend/app/support` 客服工作台（热度排序、接管）的设计；其管理后台 / 嵌入组件 / 商品卡片与我方无关
 - [ ] Phase 0–2 单窗口规则（CLAUDE.md §9.1）已被"文件不相交 + 接口先锁"的方式放开，是否改写 CLAUDE.md —— 用户决定
 
 ## 偏离记录（计划外的事，先记后做）
+
+- 2026-09-05：前端从 PRD "最小调试页" 扩为正式 demo 页面（Phase 4 M7 / Phase 6 M6），用户拍板；PRD §2 与 §15 待同步。
 
 | 日期 | 事项 | 决定 |
 |---|---|---|
