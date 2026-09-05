@@ -20,3 +20,4 @@
 | 2026-09-05 | Phase 0 | 三 session 进度对齐（master 迁到终端后可直接互发消息）；用户拍板：等 V0 交付后一并合入；`/v1/whoami` 进 PRD §8.1（v1.1）；protocol 文档补并发约定与两项待补字段 | `f1f5390` | — |
 | 2026-09-05 | Phase 0 | 合入 V0 naive baseline（session 2 交付 `4402695`）；全量实测 1/54、硬门槛 FAIL、$0.011/session；写 `docs/eval/v0-baseline.md`，PRD §12.6 V0 行填实测（v1.2）。首跑 5 条网络异常已重跑 | `590fcce` | test 134/134；eval_run_id 4 |
 | 2026-09-05 | 冲刺 | PR #1 合入 main，tag `v0.1-phase0`；合入 Phase 3 引擎 + 矩阵（`e2a5927`）；修迁移测试库跨 worktree 污染（库名带路径哈希 + 每次重建）；PLAN 增加 3 小时冲刺分工 | `7d16210` | test 218/218、lint 通过 |
+| 2026-09-05 | Phase 1 | milestone 1：迁移 0002 建 PRD §7.3 其余 10 张 agent 表（向量列 Text 占位，Phase 2 换 pgvector），`agent_actions` 上 UNIQUE(idempotency_key)、`policy_chunks` 上版本唯一键；`AuthContext(user_id, roles)` 与 `BizRepository`（get_order / get_shipping / get_ticket 强制 `WHERE user_id = ctx.user_id`）；授权与迁移往返测试。独立库 `cs_agent_p1` | `PENDING` | test 113/113、lint + mypy strict 通过 |

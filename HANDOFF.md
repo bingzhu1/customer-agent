@@ -11,9 +11,14 @@
 
 - **Phase**：Phase 0 已合入 `main`（tag `v0.1-phase0`）；Phase 3 引擎 + 矩阵已合入 `main`；**3 小时冲刺进行中**，分工见 `docs/PLAN.md` 顶部
 - **分支**：`phase0-eval-foundation`（从 `main` 切出，尚未开 PR）
+- **Phase**：Phase 1 进行中 —— milestone 1（agent 平台表 + 身份 scope）已完成，等用户验收
+- **分支**：`phase1-skeleton`（worktree 目录 `~/Desktop/ca-phase1`，与主 checkout 隔离）
 - **最新 commit**：见 `git log -1`
 - **仓库**：https://github.com/bingzhu1/customer-agent （public）
-- **模型**：本 session 为 Fable 5.1，上一 session 的模型切换问题已不存在
+- **数据库**：本 worktree 用**独立库 `cs_agent_p1`**（`.env` 中 DATABASE_URL 已指向它），
+  与主 checkout 的 `cs_agent` 互不干扰。**不要改回 `cs_agent`。**
+  库是手工建的（`CREATE DATABASE cs_agent_p1` + `CREATE EXTENSION vector` + 两个 schema），
+  docker init 脚本只在空数据卷首次启动时跑，不会自动建这个库。
 
 ## Phase 0 收官产物
 
@@ -27,6 +32,28 @@
 1. 用户合 PR → master 拉 main 打 tag `v0.1-phase0` → 通知 Phase 1 / Phase 3 各做 `git rebase main`
 2. master 职责转为：审各 session 交付、合并、跑 `make test` + `make eval` 看回归；V1 落地后 `make eval AGENT=v1` 对照 V0
 3. Phase 3（策略引擎 + 决策层）交付后审 `PolicyFacts` / `DecisionInput` 接口并定稿，供 Phase 1 接线
+1. 用户验收 milestone 3
+2. 合并 session 2 的 `phase0-v0-baseline`（V0 naive）到 `phase0-eval-foundation`，跑 `make eval AGENT=v0`，
+   报表进版本库；对照 PRD §12.6 V0 行写"裸 LLM 错在哪"小结 → Phase 0 收官，开 PR 合 `main`，打 tag `v0.1-phase0`
+3. session 3 的 `phase1-skeleton` 在 Phase 0 合入后 rebase 到 main
+4. Phase 0 的 DoD 见 PRD §15
+## Phase 1 milestone 1 产物
+
+- `alembic/versions/0002_agent_platform.py` + `src/cs_agent/db/models/agent.py`：
+  PRD §7.3 其余 10 张表（threads / messages / case_state / agent_actions / human_reviews /
+  audit_log / user_memory / memory_embeddings / policy_chunks / rate_limit_counters）
+- `src/cs_agent/auth/context.py`：`AuthContext(user_id, roles)`，frozen dataclass，`Role` 三值
+- `src/cs_agent/repositories/biz.py`：`BizRepository.get_order / get_shipping / get_ticket`，
+  全部强制 `WHERE user_id = ctx.user_id`，他人与不存在**一律返回 None**（FR-804）
+- `tests/test_authz.py` 15 条 + `tests/test_migrations.py` 扩充；共 113 个测试
+
+## 下一步要做什么
+
+1. 用户验收 Phase 1 milestone 1
+2. milestone 2：FastAPI 骨架 —— `/health`、`/ready`、`/metrics`、`/v1` 前缀（FR-105/106/108），
+   JWT 认证中间件产出 `AuthContext`（FR-801/802），请求体中的身份字段一律忽略
+3. milestone 3：`POST /v1/threads`、`GET /v1/threads/{id}`（FR-101/104，他人会话 404）
+4. Phase 0 遗留：eval runner（`make eval`）与 V0 baseline 尚未做，见下方"已知坑"
 
 ## 并行分工（2026-09-05 起，Phase 0 例外放开）
 
@@ -81,3 +108,10 @@
 - `negativexq/agentic-customer-service-platform` 尚未验证是否存在，PRD 相关设计为独立推导。
 - Phase 0–2 **不要多 session 并行**：接口与 schema 还在变。Phase 3+ 再用 `git worktree`。
 - checkpoint 恢复会**重放节点**。本版靠数据库唯一约束防重复副作用；接入真实外部服务后必须上 transactional outbox（PRD §17）。
+- Phase 1 的 agent 表**不向 biz 表建外键**（`threads.user_id` 只是普通整数列）：
+  跨 schema 耦合会把两套系统绑死，归属校验由 Repository 层负责。
+- `policy_chunks` 的 `metadata` 列在模型里叫 `chunk_metadata`：`metadata` 是 DeclarativeBase 保留名。
+- `memory_embeddings.embedding` / `policy_chunks.embedding` 现在是 **Text 占位**，
+  Phase 2 换 pgvector `vector(1536)` 并建 HNSW 索引，届时需要一次 ALTER 迁移。
+- Phase 0 的 milestone 3（eval runner）与 milestone 4（V0 baseline）**尚未完成**，
+  Phase 0 未开 PR；Phase 1 先行，最后一并合入。
