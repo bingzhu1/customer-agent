@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -54,9 +54,11 @@ class PendingActionSummary(_Strict):
 class PendingActionOut(_Strict):
     """待确认的写操作（PRD §8.3 `requires_confirmation` 事件的字段）。
 
-    Phase 4 之前**不落 `agent_actions` 表**，因此 `action_id` / `confirm_url` /
-    `expires_at` 恒为 null——前端可以据此渲染确认卡片但把按钮置灰。
-    绝不在这里编一个假的 action_id：那会让"确认"指向一个不存在的动作。
+    动作已落 `agent_actions`，因此 `action_id` / `confirm_url` / `expires_at` 都是真值，
+    前端据 `action_id != null` 决定确认按钮能不能点。
+
+    落库失败或缺少订单事实时三者仍为 null——**绝不编一个假的 action_id**，
+    那会让"确认"指向一个不存在的动作。
     """
 
     action_id: str | None = None
@@ -66,6 +68,24 @@ class PendingActionOut(_Strict):
     policy_version: int | None = None
     confirm_url: str | None = None
     expires_at: datetime | None = None
+
+
+class ConfirmActionRequest(_Strict):
+    """确认或放弃一个待执行动作（PRD §5.3 第二段流）。"""
+
+    confirm: bool = True
+    note: str | None = None
+
+
+class ConfirmActionResponse(_Strict):
+    """确认结果。`replay=true` 表示这次没有产生新的副作用，返回的是上一次的结果。"""
+
+    action_id: int
+    status: str
+    reason_code: ReasonCode
+    replay: bool
+    result: dict[str, Any] | None = None
+    request_id: str | None = None
 
 
 class MessageResponse(_Strict):
@@ -78,8 +98,8 @@ class MessageResponse(_Strict):
     confidence: Literal["low", "normal"]
     citations: list[CitationOut]
     tools_used: list[str]
-    #: 决策为 REQUIRE_CONFIRMATION 时给出结构；写路径 Phase 4 才开，
-    #: 在那之前 action_id / confirm_url / expires_at 为 null（红线 2）
+    #: 决策为 REQUIRE_CONFIRMATION 时给出结构，含可点击的 action_id 与过期时间。
+    #: 动作只是"待执行"，真正执行要用户再打一次 confirm 接口（红线 2）
     pending_action: PendingActionOut | None = None
     handoff_offer: str | None
     usage: UsageOut

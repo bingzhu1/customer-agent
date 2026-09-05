@@ -66,6 +66,20 @@ class NotFoundError(ApiError):
         super().__init__(404, "NOT_FOUND", message)
 
 
+class ActionExpiredError(ApiError):
+    """待确认的动作已过 `expires_at`（FR-504）。410 是终态，重试也不会变好。"""
+
+    def __init__(self, message: str = "该操作已过期，请重新发起") -> None:
+        super().__init__(410, "ACTION_EXPIRED", message)
+
+
+class ActionStateConflictError(ApiError):
+    """动作当前状态不接受这个操作，如对已驳回的动作点确认。"""
+
+    def __init__(self, message: str = "该操作当前状态不允许确认") -> None:
+        super().__init__(409, "ACTION_STATE_CONFLICT", message)
+
+
 class DependencyUnavailableError(ApiError):
     def __init__(self, message: str = "依赖不可用") -> None:
         super().__init__(503, "DEPENDENCY_UNAVAILABLE", message, retryable=True)
