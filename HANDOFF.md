@@ -9,69 +9,35 @@
 
 ## 当前状态
 
-- **Phase**：Phase 0 已合入 `main`（tag `v0.1-phase0`）；Phase 3 引擎 + 矩阵已合入 `main`；**3 小时冲刺进行中**，分工见 `docs/PLAN.md` 顶部
-- **分支**：`phase0-eval-foundation`（从 `main` 切出，尚未开 PR）
-- **Phase**：Phase 1 进行中 —— milestone 1（agent 平台表 + 身份 scope）已完成，等用户验收
-- **Phase**：Phase 1 进行中 —— milestone 1（agent 平台表 + 身份 scope）已验收；milestone 2（FastAPI 骨架 + JWT）已完成，等用户验收
-- **Phase**：Phase 1 进行中 —— milestone 1、2 已完成（2 等验收）
-- **分支基线**：已 rebase 到 Phase 0 tip `4402695`（含 eval runner 与 V0 baseline）。
-  `main` 里还没有 Phase 0；等 master 合入并打 `v0.1-phase0` 后，再 `git rebase main`，届时应零冲突
-- **分支**：`phase1-skeleton`（worktree 目录 `~/Desktop/ca-phase1`，与主 checkout 隔离）
+- **Phase**：Phase 0 与 Phase 3（策略引擎 + 决策矩阵）已在 `main`；本分支做 Phase 1，**3 小时冲刺进行中**，分工见 `docs/PLAN.md` 顶部
+- **分支**：`phase1-skeleton`（worktree `~/Desktop/ca-phase1`），已 rebase 到 `origin/main`
 - **最新 commit**：见 `git log -1`
 - **仓库**：https://github.com/bingzhu1/customer-agent （public）
-- **数据库**：本 worktree 用**独立库 `cs_agent_p1`**（`.env` 中 DATABASE_URL 已指向它），
-  与主 checkout 的 `cs_agent` 互不干扰。**不要改回 `cs_agent`。**
-  库是手工建的（`CREATE DATABASE cs_agent_p1` + `CREATE EXTENSION vector` + 两个 schema），
-  docker init 脚本只在空数据卷首次启动时跑，不会自动建这个库。
+- **数据库**：本 worktree 用**独立库 `cs_agent_p1`**（`.env` 中 DATABASE_URL 已指向它）。**不要改回 `cs_agent`。**
+  库是手工建的（`CREATE DATABASE cs_agent_p1` + `CREATE EXTENSION vector` + biz/agent 两个 schema）；
+  迁移往返测试用的一次性库由 `tests/test_migrations.py` 按 worktree 路径哈希自建自删。
 
-## Phase 0 收官产物
-## Phase 1 milestone 2 产物
+## 本分支已交付（Phase 1 milestone 1–2）
 
-- `src/cs_agent/api/`：`main.py`（只做装配）、`middleware.py`（request_id → 指标 → 认证，
-  由外到内）、`errors.py`（§8.4 统一信封，404 不区分"不存在"与"不属于你"）、
-  `deps.py`（`AuthDep` / `SessionDep` / `BizRepoDep` / `require_role`）、
-  `routes/ops.py`（health / ready / metrics）、`routes/v1.py`（目前只有 `GET /v1/whoami` 认证自检）
-- `src/cs_agent/auth/jwt.py`：HS256 签发与校验，显式 `algorithms=["HS256"]` 防 alg 混淆；
-  校验失败一律 401 `UNAUTHENTICATED`，不区分签名错/过期/缺字段
-- `src/cs_agent/observability/`：structlog（contextvars 绑 request_id/user_id）与 Prometheus 指标
-- 新依赖：fastapi、uvicorn[standard]、pyjwt、prometheus-client、httpx(dev)
+- `alembic/versions/0002_agent_platform.py` + `db/models/agent.py`：PRD §7.3 其余 10 张 agent 表
+  （UNIQUE(idempotency_key)、policy_chunks 版本唯一键；向量列 Text 占位，Phase 2 换 pgvector）
+- `auth/context.py`（`AuthContext(user_id, roles)`）+ `auth/jwt.py`（HS256，显式 algorithms 防 alg 混淆）
+- `repositories/biz.py`：`get_order / get_shipping / get_ticket` 强制 `WHERE user_id = ctx.user_id`，
+  他人与不存在**一律返回 None**（FR-804）
+- `api/`：`main.py` 只做装配；middleware 顺序 request_id → 指标 → 认证；`errors.py` 是 §8.4 统一信封；
+  `routes/ops.py`（/health /ready /metrics）、`routes/v1.py`（目前只有 `GET /v1/whoami`）
+- `observability/`：structlog + Prometheus 指标
 - `make serve` 起服务、`make token USER=101` 签调试 token
-- 测试合计 182 个（Phase 0 117 + Phase 1 新增）
-
-## 树里已有的 Phase 0 产物：eval runner
-
-- eval runner（milestone 3）+ V0 naive baseline（session 2 交付，已合入）
-- V0 实测：1/54，硬门槛 FAIL，tokens/session 2782，$0.011/session；报表 `eval_reports/latest_v0-naive.md`，
-  分析 `docs/eval/v0-baseline.md`（五类典型错误 + 记忆指标的反直觉说明）
-- 首次跑有 5 条 APIConnectionError，已删报表重跑，第二次 54 条零异常（eval_run_id 4）
 
 ## 下一步要做什么
 
-1. 用户合 PR → master 拉 main 打 tag `v0.1-phase0` → 通知 Phase 1 / Phase 3 各做 `git rebase main`
-2. master 职责转为：审各 session 交付、合并、跑 `make test` + `make eval` 看回归；V1 落地后 `make eval AGENT=v1` 对照 V0
-3. Phase 3（策略引擎 + 决策层）交付后审 `PolicyFacts` / `DecisionInput` 接口并定稿，供 Phase 1 接线
-1. 用户验收 milestone 3
-2. 合并 session 2 的 `phase0-v0-baseline`（V0 naive）到 `phase0-eval-foundation`，跑 `make eval AGENT=v0`，
-   报表进版本库；对照 PRD §12.6 V0 行写"裸 LLM 错在哪"小结 → Phase 0 收官，开 PR 合 `main`，打 tag `v0.1-phase0`
-3. session 3 的 `phase1-skeleton` 在 Phase 0 合入后 rebase 到 main
-4. Phase 0 的 DoD 见 PRD §15
-## Phase 1 milestone 1 产物
-
-- `alembic/versions/0002_agent_platform.py` + `src/cs_agent/db/models/agent.py`：
-  PRD §7.3 其余 10 张表（threads / messages / case_state / agent_actions / human_reviews /
-  audit_log / user_memory / memory_embeddings / policy_chunks / rate_limit_counters）
-- `src/cs_agent/auth/context.py`：`AuthContext(user_id, roles)`，frozen dataclass，`Role` 三值
-- `src/cs_agent/repositories/biz.py`：`BizRepository.get_order / get_shipping / get_ticket`，
-  全部强制 `WHERE user_id = ctx.user_id`，他人与不存在**一律返回 None**（FR-804）
-- `tests/test_authz.py` 15 条 + `tests/test_migrations.py` 扩充（agent 表断言、幂等键重复插入）
-
-## 下一步要做什么
-
-1. 用户验收 Phase 1 milestone 2
-2. milestone 3：`POST /v1/threads`、`GET /v1/threads/{id}`（FR-101/104，他人会话 404）
-3. milestone 4：LangGraph 最小图（ingest→understand→act→respond）+ Postgres checkpointer + 4 个只读工具
-4. 中间件还缺限流（FR-806，表已建）与超时；Phase 1 收官前补
-5. Phase 0 遗留：eval runner（`make eval`）与 V0 baseline 尚未做，见下方"已知坑"
+1. 冲刺第一段：LangGraph 最小图 ingest→understand→act→decide→respond（checkpointer 先用 MemorySaver）
+   + 4 个只读工具（search_policy 暂为关键词匹配，非真 RAG）
+2. 冲刺第二段：`agents/v1_tools.py` 实现 `AgentUnderTest`，registry 加 `v1`，跑 `make eval AGENT=v1`，
+   目标 authorization violation = 0
+3. 冲刺第三段：decide 调 `decision.matrix.decide`，policy_gate 用 Repository 实时查事实构造 `PolicyFacts`
+   后调 `policy.engine.evaluate`；`agents/v3_policy.py`，registry 加 `v3`，跑 `make eval AGENT=v3`
+4. 冲刺不做：SSE、Langfuse、限流、prompt caching、写操作执行；`POST /v1/threads` 等 REST 接口也押后
 
 ## 并行分工（2026-09-05 起，Phase 0 例外放开）
 
