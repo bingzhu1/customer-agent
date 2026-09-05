@@ -19,6 +19,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
@@ -125,6 +126,26 @@ _SEARCH = text(
     """
 )
 
+#: 固定注入的 key：这类偏好对**每一轮**都有效，与当前问句像不像无关。
+#: 例如"希望用英文沟通"跟"帮我催单"毫无相似度，纯向量 top_k 会在记忆变多后把它挤掉，
+#: 结果就是用户明明说过要英文、客服却一直用中文。语言偏好只影响回复语言，不碰任何判定（红线 3）。
+ALWAYS_INJECT_KEYS: tuple[str, ...] = ("language_preference",)
+
+_PINNED = text(
+    f"""
+    SELECT {_SELECT_COLUMNS},
+           1 - (e.embedding <=> CAST(:query AS vector)) AS score
+    FROM agent.user_memory m
+    JOIN agent.memory_embeddings e ON e.memory_id = m.id
+    WHERE m.user_id = :user_id
+      AND m.mem_key = ANY(:keys)
+      AND m.deleted_at IS NULL
+      AND (m.ttl_at IS NULL OR m.ttl_at > :now)
+      AND e.embedding IS NOT NULL
+    ORDER BY e.embedding <=> CAST(:query AS vector)
+    """
+)
+
 
 def _record(row: Any, *, score: float | None = None) -> MemoryRecord:
     return MemoryRecord(
@@ -210,27 +231,32 @@ class UserMemoryRepo:
         top_k: int = 5,
         *,
         now: datetime | None = None,
+        pinned_keys: Sequence[str] = ALWAYS_INJECT_KEYS,
     ) -> list[MemoryRecord]:
         """向量检索本人的、未软删、未过期的记忆。返回顺序即相似度降序。
+
+        `pinned_keys` 里的 key 若存在则**一定**在结果里：没进 top_k 的追加在末尾
+        （它们的分数必然不高于第 k 条，所以整体仍是降序）。传空序列可关掉固定注入。
 
         **返回值只能用于语气与上下文提示**，不得进入任何资格 / 金额 / 权限判断（红线 3）。
         """
         vector = self._provider.embed_query(query)
+        params = {
+            "user_id": user_id,
+            "query": format_vector(vector),
+            "now": now or datetime.now(UTC),
+        }
         with self.engine.connect() as conn:
-            rows = (
-                conn.execute(
-                    _SEARCH,
-                    {
-                        "user_id": user_id,
-                        "query": format_vector(vector),
-                        "now": now or datetime.now(UTC),
-                        "top_k": top_k,
-                    },
-                )
-                .mappings()
-                .all()
+            rows = conn.execute(_SEARCH, {**params, "top_k": top_k}).mappings().all()
+            pinned_rows = (
+                conn.execute(_PINNED, {**params, "keys": list(pinned_keys)}).mappings().all()
+                if pinned_keys
+                else []
             )
-        return [_record(r, score=float(r["score"])) for r in rows]
+        out = [_record(r, score=float(r["score"])) for r in rows]
+        seen = {m.id for m in out}
+        out += [_record(r, score=float(r["score"])) for r in pinned_rows if r["id"] not in seen]
+        return out
 
     def get(self, user_id: int, mem_key: str) -> MemoryRecord | None:
         """按 key 精确取，**包含**已软删与已过期的条目——供审计与调试，不供检索。"""

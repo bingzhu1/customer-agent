@@ -368,3 +368,19 @@ def test_async_extraction_survives_a_broken_extractor(repo: UserMemoryRepo, user
         queue.drain(timeout=10)
         assert queue.stats.failed == 1
     assert repo.search(user, "随便说说", now=NOW) == []
+
+
+def test_search_always_injects_language_preference(repo: UserMemoryRepo, user: int) -> None:
+    """语言偏好与当前问句不相似也必须在结果里：它对每一轮都有效（否则记忆多了就被挤掉）。"""
+    repo.upsert(user, "language_preference", "希望客服用英文沟通", confidence=0.95, now=NOW)
+    for i in range(4):
+        repo.upsert(user, f"topic_{i}", f"物流催单相关记录 {i}", confidence=0.7, now=NOW)
+    out = repo.search(user, "物流催单相关", top_k=2, now=NOW)
+    keys = [m.mem_key for m in out]
+    assert "language_preference" in keys
+    assert len(out) == 3  # top_k 2 + 追加 1
+    assert [m.score for m in out] == sorted((m.score or 0 for m in out), reverse=True)
+    # 关掉固定注入就回到纯 top_k
+    assert "language_preference" not in [
+        m.mem_key for m in repo.search(user, "物流催单相关", top_k=2, now=NOW, pinned_keys=())
+    ]
