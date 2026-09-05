@@ -19,6 +19,8 @@ dependencies = [
     "alembic>=1.13",
     "structlog>=24.1",
     "langfuse>=3.0",
+    # Phase 2 RAG：Anthropic 不提供 embedding 接口，向量化走 OpenAI text-embedding-3-small
+    "openai>=1.40",
     "python-dotenv>=1.0",
 ]
 
