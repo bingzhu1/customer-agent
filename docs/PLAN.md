@@ -15,8 +15,8 @@ authorization violation 7 → 0，越权 / 超期 / 食品 / 定制退款被确�
 
 | 时段 | Phase 1（P1） | Phase 3（P3） | master |
 |---|---|---|---|
-| 0–60 分 | [ ] rebase main；LangGraph 最小图（ingest→understand→act→decide→respond），checkpointer 用 MemorySaver；4 个只读工具接 Repository | [x] 引擎 + 矩阵已交付 `e2a5927` → [ ] rebase main；[ ] 受约束的拒绝 / 升级话术模板 `decision/templates.py` | [x] 合 main、tag；[ ] 审 P3 接口定稿；[ ] PLAN 改冲刺版 |
-| 60–120 分 | [ ] `agents/v1_tools.py` 实现 `AgentUnderTest`，`make eval AGENT=v1` | [ ] 交付模板；待命修 bug | [ ] 合 P3 到 main；[ ] 跑 V1 eval，把授权用例修到 0 违规 |
+| 0–60 分 | [ ] rebase main；LangGraph 最小图（ingest→understand→act→decide→respond），checkpointer 用 MemorySaver；4 个只读工具接 Repository | [x] 引擎 + 矩阵已交付 `e2a5927` → [ ] rebase main；[ ] 受约束的拒绝 / 升级话术模板 `decision/templates.py` | [x] 合 main、tag；[x] 审 P3 接口定稿（PolicyFacts 8 字段 / evaluate / decide，与 prompt 一致）；[ ] PLAN 改冲刺版 |
+| 60–120 分 | [ ] `agents/v1_tools.py` 实现 `AgentUnderTest`，`make eval AGENT=v1` | [ ] 交付模板；待命修 bug | [x] 合 P3 到 main `d31d9a7`；[ ] 跑 V1 eval，把授权用例修到 0 违规 |
 | 120–180 分 | [ ] `policy_gate` / `decide` 节点接 P3 的 `evaluate` / `decide`，`agents/v3_policy.py`，`make eval AGENT=v3` | [ ] 待命 | [ ] 跑 V3 eval；[ ] README 写 V0→V3 演进表；[ ] 合 P1 到 main，tag `v0.4-sprint` |
 
 **冲刺期间明确推后**（不删，回到各 Phase 的正常节奏再做）：RAG 与向量检索（`search_policy` 用策略 `human_text` 关键词匹配代替，标注"非真 RAG"）、

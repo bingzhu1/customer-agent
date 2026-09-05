@@ -1,9 +1,12 @@
 """Alembic 迁移可逆性：downgrade base → upgrade head 不报错，且表齐全。
 
-在**一次性库** `cs_agent_test` 上做，不碰 .env 指向的开发库——否则每跑一次测试，
+在**一次性库**上做，不碰 .env 指向的开发库——否则每跑一次测试，
 开发库里的 eval_runs 历史与 seed 数据都会被清掉。
+库名带仓库路径哈希（多个 worktree 各用各的，迁移 head 不同不会互相污染），
+且每次 fixture 开始先 DROP 再 CREATE，保证从空库出发。
 """
 
+import hashlib
 from pathlib import Path
 
 import pytest
@@ -16,7 +19,7 @@ from sqlalchemy.exc import OperationalError
 from cs_agent.settings import get_settings
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-TEST_DB_NAME = "cs_agent_test"
+TEST_DB_NAME = "cs_agent_test_" + hashlib.sha1(str(REPO_ROOT).encode()).hexdigest()[:8]
 
 
 def _test_url() -> str:
@@ -32,15 +35,12 @@ def _alembic_config() -> Config:
 
 @pytest.fixture(scope="module")
 def migrated_engine() -> Engine:
-    """建（若不存在）一次性库 cs_agent_test 并升级到 head；连不上数据库则 skip 本文件。"""
+    """重建本 worktree 专属的一次性库并升级到 head；连不上数据库则 skip 本文件。"""
     admin = create_engine(get_settings().database_url, isolation_level="AUTOCOMMIT")
     try:
         with admin.connect() as conn:
-            exists = conn.execute(
-                text("SELECT 1 FROM pg_database WHERE datname = :n"), {"n": TEST_DB_NAME}
-            ).scalar()
-            if not exists:
-                conn.execute(text(f'CREATE DATABASE "{TEST_DB_NAME}"'))
+            conn.execute(text(f'DROP DATABASE IF EXISTS "{TEST_DB_NAME}" WITH (FORCE)'))
+            conn.execute(text(f'CREATE DATABASE "{TEST_DB_NAME}"'))
     except OperationalError as exc:  # pragma: no cover - 取决于本机环境
         pytest.skip(f"数据库不可达，跳过数据库测试：{exc.__class__.__name__}")
     finally:

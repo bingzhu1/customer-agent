@@ -19,3 +19,4 @@
 | 2026-09-05 | Phase 0 | 修复：迁移往返测试改用一次性库 `cs_agent_test`，不再清空开发库的 eval_runs 与 seed；alembic env 支持 Config 覆盖连接串 | `c506733` | test 117/117；开发库 eval_runs 保留 |
 | 2026-09-05 | Phase 0 | 三 session 进度对齐（master 迁到终端后可直接互发消息）；用户拍板：等 V0 交付后一并合入；`/v1/whoami` 进 PRD §8.1（v1.1）；protocol 文档补并发约定与两项待补字段 | `f1f5390` | — |
 | 2026-09-05 | Phase 0 | 合入 V0 naive baseline（session 2 交付 `4402695`）；全量实测 1/54、硬门槛 FAIL、$0.011/session；写 `docs/eval/v0-baseline.md`，PRD §12.6 V0 行填实测（v1.2）。首跑 5 条网络异常已重跑 | `590fcce` | test 134/134；eval_run_id 4 |
+| 2026-09-05 | 冲刺 | PR #1 合入 main，tag `v0.1-phase0`；合入 Phase 3 引擎 + 矩阵（`e2a5927`）；修迁移测试库跨 worktree 污染（库名带路径哈希 + 每次重建）；PLAN 增加 3 小时冲刺分工 | （待填） | test 218/218、lint 通过 |
