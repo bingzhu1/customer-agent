@@ -12,6 +12,8 @@ from typing import Any, TypedDict
 from cs_agent.decision.matrix import Decision
 from cs_agent.eval.protocol import Citation, ToolCall, Usage
 from cs_agent.graph.llm import Understanding
+from cs_agent.memory.case_facts import CaseFacts
+from cs_agent.memory.user_memory import MemoryRecord
 from cs_agent.policy.engine import PolicyVerdict
 
 
@@ -20,6 +22,13 @@ class AgentState(TypedDict, total=False):
 
     # 输入
     user_text: str
+
+    # ingest（确定性代码写）
+    #: 本会话已确认的事实（PRD §10 ② 层）。只由确定性代码从工具结果与 verdict 填充。
+    case_facts: CaseFacts
+    #: 长期记忆命中（§10 ④ 层，**非权威**）。只能进 respond 的 prompt，
+    #: 绝不进 policy_gate / decide——由 tests/test_memory_wiring.py 反向校验。
+    memory_hints: list[MemoryRecord]
 
     # understand（LLM 写）
     understanding: Understanding

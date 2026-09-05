@@ -17,6 +17,7 @@ _LAZY_MODULES: dict[str, str] = {
     "v0": "cs_agent.agents.v0_naive",
     "v1": "cs_agent.agents.v1_tools",
     "v3": "cs_agent.agents.v3_policy",
+    "v5": "cs_agent.agents.v5_memory",
 }
 
 

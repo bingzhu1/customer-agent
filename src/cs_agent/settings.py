@@ -23,6 +23,8 @@ class Settings(BaseSettings):
     embedding_provider: str = "fake"
     embedding_model: str = "text-embedding-3-small"
     embedding_dimensions: int = 1536  # 与 policy_chunks / memory_embeddings 的 vector(1536) 一致
+    #: 长期记忆总开关。关掉后 ingest 不检索、persist 不抽取写入（§10 ④ 层）。
+    memory_enabled: bool = True
     rag_top_k: int = 8
     rag_tau_low: float = 0.30  # 占位，Phase 2 用 golden 标定后回填 ADR-0007
     rag_tau_high: float = 0.60
