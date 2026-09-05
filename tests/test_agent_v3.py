@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import pytest
-from sqlalchemy import create_engine
+from sqlalchemy import Engine, create_engine
 from sqlalchemy.exc import OperationalError
 
 from cs_agent.agents.v3_policy import V3PolicyAgent
@@ -37,6 +37,19 @@ class RefundLlm:
 
     def respond(self, prompt: str) -> tuple[str, Usage]:
         return "（模型正文）", Usage(llm_calls=1)
+
+
+@pytest.fixture(scope="module")
+def seeded_engine() -> Engine:
+    engine = create_engine(get_settings().database_url, pool_pre_ping=True)
+    try:
+        with engine.connect():
+            pass
+    except OperationalError as exc:  # pragma: no cover - 取决于本机环境
+        pytest.skip(f"数据库不可达，跳过数据库测试：{exc.__class__.__name__}")
+    run_seed(engine)
+    ingest_policies(provider=FakeEmbeddings(), engine=engine)
+    return engine
 
 
 @pytest.fixture(scope="module")
@@ -197,3 +210,70 @@ def test_citation_anchor_falls_back_to_yaml(seeded: None) -> None:
     assert result.citations
     assert result.citations[0].policy_id == "REFUND-STD-001"
     assert result.citations[0].anchor == "refund#standard"
+
+
+# ---- 防重复退款的第二道闸（master 报的线上 bug：82913 被真实退款三次）----
+
+
+def test_already_refunded_order_replays_instead_of_proposing(agent: V3PolicyAgent) -> None:
+    """82922 在 seed 里已有成功退款：再申请必须走矩阵规则 11，而不是再提议一次。"""
+    result = _ask(agent, 82922)
+    assert result.decision is DecisionOutcome.ANSWER
+    assert result.reason_code is ReasonCode.IDEMPOTENT_REPLAY
+    assert result.debug["rule_no"] == "11"
+    # 关键：不得再产生待确认动作，否则用户点一下就是第二次退款
+    assert result.pending_action_id is None
+
+
+def test_replay_reply_states_the_existing_refund(agent: V3PolicyAgent) -> None:
+    """回复要说清"已经退过、多少钱、什么时候"，金额来自 biz.refunds 不来自模型。"""
+    reply = _ask(agent, 82922).reply
+    assert "不会重复退款" in reply
+    assert "45.00" in reply  # 契约 §2：82922 金额 45.00
+
+
+def test_refund_executed_now_blocks_the_next_request(
+    agent: V3PolicyAgent, seeded_engine: Engine
+) -> None:
+    """线上那条 bug 的直接复现：先退成功一笔，再申请同一单必须被规则 11 挡住。
+
+    幂等键带时间窗，跨窗口就是新键、新动作——所以光靠幂等键挡不住"隔一小时再退一次"，
+    必须有这道基于 biz.refunds 的闸。
+    """
+    from datetime import UTC, datetime
+    from decimal import Decimal
+
+    from sqlalchemy import delete
+    from sqlalchemy.orm import Session as OrmSession
+
+    from cs_agent.db.models.biz import Refund
+
+    before = _ask(agent, 82913)
+    assert before.decision is DecisionOutcome.REQUIRE_CONFIRMATION  # 本来是可以退的
+
+    now = datetime.now(UTC)
+    with OrmSession(seeded_engine) as db:
+        db.add(
+            Refund(
+                order_id=82913,
+                user_id=101,
+                amount=Decimal("89.00"),
+                status="succeeded",
+                reason_code="POLICY_SATISFIED",
+                policy_id="REFUND-STD-001",
+                policy_version=3,
+                simulated=True,
+                created_at=now,
+                executed_at=now,
+            )
+        )
+        db.commit()
+    try:
+        after = _ask(agent, 82913)
+        assert after.decision is DecisionOutcome.ANSWER
+        assert after.reason_code is ReasonCode.IDEMPOTENT_REPLAY
+        assert after.pending_action_id is None
+    finally:
+        with OrmSession(seeded_engine) as db:
+            db.execute(delete(Refund).where(Refund.order_id == 82913))
+            db.commit()
