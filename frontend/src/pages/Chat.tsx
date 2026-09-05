@@ -1,30 +1,23 @@
 /**
- * 对话页：建会话 → 发消息 → 渲染判定结果。
- *
- * 两点刻意的做法：
- * - 所有请求都挂在一个 AbortController 上，组件卸载或换会话时中断，
- *   回调里再判一次 `isAbort`，避免对着已卸载的组件 dispatch；
- * - 时间线状态全部走 `timelineReducer`，页面本身不改条目数组，
- *   接 SSE 时只需要多 dispatch 几种事件。
+ * 对话页布局：左侧会话侧栏 · 中间对话流 · 右侧本轮判定。
+ * 所有状态与副作用在 useWorkspace，这里只排版。
  */
 
-import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import { API_BASE, USE_MOCK } from '../api'
-import { describeError, isAbort, toApiError } from '../api/errors'
-import type { ApiClient, MessageResponse, PendingAction, WhoAmI } from '../api/types'
-import DebugDrawer from '../DebugDrawer'
-import { historyToItems } from '../timeline/history'
+import type { ApiClient, WhoAmI } from '../api/types'
+import Icon from '../components/Icon'
+import JudgmentPanel from '../components/JudgmentPanel'
+import Sidebar from '../components/Sidebar'
 import AssistantFinalItem from '../timeline/AssistantFinalItem'
+import { DECISION_STYLE } from '../timeline/decision'
 import ErrorItem from '../timeline/ErrorItem'
+import { isWaiting, latestPendingAction } from '../timeline/reducer'
 import UserMessageItem from '../timeline/UserMessageItem'
 import WaitingItem from '../timeline/WaitingItem'
-import {
-  initialState,
-  isWaiting,
-  latestPendingAction,
-  timelineReducer,
-} from '../timeline/reducer'
+import { activeThread, latestResult, threadSummaries, threadTitle } from '../timeline/workspace'
+import { useWorkspace } from '../useWorkspace'
 
 interface Props {
   client: ApiClient
@@ -32,243 +25,148 @@ interface Props {
   onLogout: () => void
 }
 
+const SUGGESTIONS = ['我要退款', '查一下我的订单', '620 元那笔怎么退', '物流到哪了', '99999 是别人的订单']
+
 export default function Chat({ client, identity, onLogout }: Props) {
-  const [state, dispatch] = useReducer(timelineReducer, initialState)
-  const [threadId, setThreadId] = useState<string | null>(null)
-  const [threadError, setThreadError] = useState<string | null>(null)
+  const ws = useWorkspace(client, onLogout)
   const [draft, setDraft] = useState('')
-  const [drawerOpen, setDrawerOpen] = useState(false)
-  const [historyInput, setHistoryInput] = useState('')
+  const [panelOpen, setPanelOpen] = useState(true)
+  const endRef = useRef<HTMLDivElement>(null)
 
-  const abortRef = useRef<AbortController | null>(null)
-  const seqRef = useRef(0)
-  const lastSentRef = useRef<string>('')
-  const nextId = () => `evt${++seqRef.current}`
+  const thread = activeThread(ws.state)
+  const items = thread?.timeline.items ?? []
+  const waiting = thread ? isWaiting(thread.timeline) : false
+  const pending = thread ? latestPendingAction(thread.timeline) : null
+  const result = latestResult(thread)
+  const status = result ? DECISION_STYLE[result.decision] : null
 
-  /** 401 一律踢回登录页；其余错误留在时间线上。 */
-  const handleFailure = useCallback(
-    (id: string, cause: unknown) => {
-      if (isAbort(cause)) return
-      const error = toApiError(cause)
-      if (describeError(error).needsLogin) {
-        onLogout()
-        return
-      }
-      dispatch({ type: 'error', id, error })
-    },
-    [onLogout],
-  )
-
-  // 进页面就建一个会话；卸载时中断在途请求
+  // 新条目到达时滚到底部
   useEffect(() => {
-    const controller = new AbortController()
-    abortRef.current = controller
-    client
-      .createThread(controller.signal)
-      .then((created) => setThreadId(created.thread_id))
-      .catch((cause: unknown) => {
-        if (isAbort(cause)) return
-        const view = describeError(cause)
-        if (view.needsLogin) {
-          onLogout()
-          return
-        }
-        setThreadError(`${view.title}：${view.detail}（${view.code}）`)
-      })
-    return () => controller.abort()
-  }, [client, onLogout])
+    endRef.current?.scrollIntoView({ block: 'end' })
+  }, [items.length, thread?.id])
 
-  const send = useCallback(
-    async (text: string) => {
-      if (!threadId || text.trim().length === 0) return
-      const content = text.trim()
-      lastSentRef.current = content
-
-      const controller = new AbortController()
-      abortRef.current = controller
-      const replyId = nextId()
-
-      dispatch({ type: 'user.message', id: nextId(), text: content })
-      dispatch({ type: 'waiting', id: replyId })
-      setDraft('')
-
-      try {
-        const result = await client.sendMessage(threadId, content, controller.signal)
-        dispatch({ type: 'assistant.final', id: replyId, result })
-      } catch (cause) {
-        handleFailure(replyId, cause)
-      }
-    },
-    [client, threadId, handleFailure],
-  )
-
-  const confirm = useCallback(
-    async (action: PendingAction, accept: boolean) => {
-      // action_id 为 null 说明写路径未开，按钮本来就该是灰的；这里再兜一次
-      if (action.action_id === null) return
-      const controller = new AbortController()
-      abortRef.current = controller
-      const replyId = nextId()
-      dispatch({ type: 'waiting', id: replyId, hint: accept ? '正在提交确认…' : '正在取消…' })
-      try {
-        const result = await client.confirmAction(action.action_id, accept, controller.signal)
-        dispatch({ type: 'assistant.final', id: replyId, result })
-      } catch (cause) {
-        handleFailure(replyId, cause)
-      }
-    },
-    [client, handleFailure],
-  )
-
-  /** 拉历史会话：接口未就绪时按钮置灰，这里只处理已就绪的情况。 */
-  const loadHistory = useCallback(
-    async (id: string) => {
-      const target = id.trim()
-      if (target === '') return
-      const controller = new AbortController()
-      abortRef.current = controller
-      setThreadError(null)
-      try {
-        const detail = await client.getThread(target, controller.signal)
-        setThreadId(detail.thread_id)
-        dispatch({ type: 'reset', items: historyToItems(detail) })
-      } catch (cause) {
-        if (isAbort(cause)) return
-        const view = describeError(cause)
-        if (view.needsLogin) {
-          onLogout()
-          return
-        }
-        setThreadError(`${view.title}：${view.detail}（${view.code}）`)
-      }
-    },
-    [client, onLogout],
-  )
-
-  /** 抽屉展示最新一轮的用量与工具。 */
-  const latestResult: MessageResponse | null = (() => {
-    for (let i = state.items.length - 1; i >= 0; i--) {
-      const item = state.items[i]
-      if (item.kind === 'assistant') return item.result
-    }
-    return null
-  })()
-
-  const waiting = isWaiting(state)
-  const pending = latestPendingAction(state)
+  const submit = () => {
+    if (!thread || waiting || !draft.trim()) return
+    void ws.send(thread.id, draft)
+    setDraft('')
+  }
 
   return (
-    <div className="chat">
-      <header className="topbar">
-        <div>
-          <strong>客服 Agent · demo</strong>
-          <span className="muted small">
-            {' '}
-            user_id={identity.user_id} · {identity.roles.join(', ')} ·{' '}
-            {USE_MOCK ? 'mock 数据' : API_BASE}
-            {threadId && ` · thread ${threadId}`}
-          </span>
-        </div>
-        <div className="row">
-          <button className="btn" onClick={() => setDrawerOpen((open) => !open)}>
-            {drawerOpen ? '关闭调试' : '调试信息'}
-          </button>
-          <a className="btn" href="#/review">
-            审批页
-          </a>
-          <button className="btn" onClick={onLogout}>
-            退出
-          </button>
-        </div>
-      </header>
+    <div className="app">
+      <Sidebar
+        threads={threadSummaries(ws.state)}
+        identity={identity}
+        source={USE_MOCK ? 'mock' : API_BASE.replace(/^https?:\/\//, '')}
+        creating={ws.creating}
+        canOpenById={client.capabilities.getThread}
+        onNew={() => void ws.newThread()}
+        onSelect={ws.select}
+        onOpenById={(id) => void ws.openById(id)}
+      />
 
-      <div className="body">
-        <main className="timeline">
-          <div className="row history-bar">
-            <input
-              className="input"
-              value={historyInput}
-              placeholder={USE_MOCK ? '输入 thread_id 拉取历史（试 th_gone 看 404）' : '输入 thread_id 拉取历史'}
-              onChange={(event) => setHistoryInput(event.target.value)}
-              aria-label="thread_id"
-            />
-            <button
-              className="btn"
-              disabled={!client.capabilities.getThread || historyInput.trim() === ''}
-              onClick={() => void loadHistory(historyInput)}
-            >
-              拉取历史
-            </button>
-            {!client.capabilities.getThread && (
-              <span className="muted small">GET /v1/threads/{'{id}'} 未就绪</span>
-            )}
+      <main className="main">
+        <header className="topbar">
+          <div className="row">
+            <span className="topbar-title">{thread ? threadTitle(thread, 24) : '会话'}</span>
+            {thread && <span className="mono muted small">{thread.id}</span>}
           </div>
+          <div className="row">
+            {status && (
+              <span className={`pill tone-${status.tone}`}>
+                <span className={`dot tone-dot-${status.tone}`} />
+                {status.label}
+              </span>
+            )}
+            <button className={`icon-btn${panelOpen ? ' on' : ''}`} onClick={() => setPanelOpen((open) => !open)} aria-label="判定面板" title="判定面板">
+              <Icon name="panel" size={16} />
+            </button>
+            <a className="icon-btn" href="#/review" aria-label="审批页" title="审批页">
+              <Icon name="user" size={16} />
+            </a>
+            <button className="icon-btn" onClick={onLogout} aria-label="退出" title="退出">
+              <Icon name="logout" size={16} />
+            </button>
+          </div>
+        </header>
 
-          {threadError && <p className="error-text">{threadError}</p>}
-          {!threadId && !threadError && <p className="muted">正在创建会话…</p>}
+        {ws.notice && (
+          <div className="notice-bar">
+            <span>{ws.notice}</span>
+            <button className="link" onClick={ws.dismissNotice}>
+              知道了
+            </button>
+          </div>
+        )}
 
-          {state.items.length === 0 && threadId && (
-            <p className="muted">
-              试试：<code>我要退款</code>、<code>查一下我的订单</code>、<code>620 元那笔怎么退</code>、
-              <code>物流到哪了</code>、<code>99999 是别人的订单</code>
-            </p>
-          )}
+        <div className="timeline">
+          <div className="timeline-inner">
+            {items.length === 0 && thread && (
+              <div className="empty">
+                <p className="muted">回复由模型生成，退款、拒绝、转人工由策略引擎判定。试试：</p>
+                <div className="row wrap">
+                  {SUGGESTIONS.map((text) => (
+                    <button key={text} className="chip" onClick={() => void ws.send(thread.id, text)} disabled={waiting}>
+                      {text}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
 
-          {state.items.map((item) => {
-            switch (item.kind) {
-              case 'user':
-                return <UserMessageItem key={item.id} text={item.text} />
-              case 'waiting':
-                return <WaitingItem key={item.id} hint={item.hint} />
-              case 'error':
-                return (
-                  <ErrorItem
-                    key={item.id}
-                    error={item.error}
-                    onRetry={() => void send(lastSentRef.current)}
-                  />
-                )
-              case 'assistant':
-                return (
-                  <AssistantFinalItem
-                    key={item.id}
-                    result={item.result}
-                    actionable={
-                      item.result.pending_action !== null &&
-                      item.result.pending_action.action_id === pending?.action_id
-                    }
-                    confirmEnabled={client.capabilities.confirm}
-                    busy={waiting}
-                    onConfirm={confirm}
-                  />
-                )
-            }
-          })}
-        </main>
+            {items.map((item) => {
+              switch (item.kind) {
+                case 'user':
+                  return <UserMessageItem key={item.id} text={item.text} />
+                case 'waiting':
+                  return <WaitingItem key={item.id} hint={item.hint} />
+                case 'error':
+                  return <ErrorItem key={item.id} error={item.error} onRetry={thread ? () => ws.retry(thread.id) : undefined} />
+                case 'assistant':
+                  return (
+                    <AssistantFinalItem
+                      key={item.id}
+                      result={item.result}
+                      actionable={item.result.pending_action !== null && item.result.pending_action === pending}
+                      confirmEnabled={client.capabilities.confirm}
+                      busy={waiting}
+                      onConfirm={(action, accept) => thread && void ws.confirm(thread.id, action, accept)}
+                    />
+                  )
+              }
+            })}
+            <div ref={endRef} />
+          </div>
+        </div>
 
-        <DebugDrawer result={latestResult} open={drawerOpen} onClose={() => setDrawerOpen(false)} />
-      </div>
+        <footer className="composer">
+          <div className="composer-box">
+            <textarea
+              className="composer-input"
+              rows={1}
+              value={draft}
+              placeholder={waiting ? '等待本轮结果…' : pending?.action_id ? '回复"确认"，或直接点上面的按钮' : '说点什么…'}
+              disabled={!thread || waiting}
+              onChange={(event) => setDraft(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' && !event.shiftKey) {
+                  event.preventDefault()
+                  submit()
+                }
+              }}
+              aria-label="输入消息"
+            />
+            <button className="send-btn" disabled={!thread || waiting || draft.trim() === ''} onClick={submit} aria-label="发送">
+              <Icon name="arrow-up" size={16} strokeWidth={2.2} />
+            </button>
+          </div>
+          <div className="composer-hint muted small">
+            <span>{USE_MOCK ? 'mock 数据，不需要后端' : `后端 ${API_BASE}`}</span>
+            <span>Enter 发送 · Shift+Enter 换行</span>
+          </div>
+        </footer>
+      </main>
 
-      <footer className="composer">
-        <textarea
-          className="input"
-          rows={2}
-          value={draft}
-          placeholder={waiting ? '等待本轮结果…' : '说点什么（Enter 发送，Shift+Enter 换行）'}
-          disabled={!threadId || waiting}
-          onChange={(event) => setDraft(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter' && !event.shiftKey) {
-              event.preventDefault()
-              void send(draft)
-            }
-          }}
-          aria-label="输入消息"
-        />
-        <button className="btn primary" disabled={!threadId || waiting || draft.trim() === ''} onClick={() => void send(draft)}>
-          发送
-        </button>
-      </footer>
+      {panelOpen && <JudgmentPanel result={result} threadId={thread?.id ?? null} onClose={() => setPanelOpen(false)} />}
     </div>
   )
 }

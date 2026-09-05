@@ -6,6 +6,13 @@
 
 Vite + React + TypeScript，无组件库、无状态库、纯 CSS。
 
+三栏布局：左侧会话列表（本次会话里建过 / 打开过的 thread）· 中间对话流 · 右侧"本轮判定"面板
+（decision / reason_code / 置信 / 引用 / 工具 / 用量）。对话流里只留回复正文、工具调用一行、
+确认卡或说明卡、一行判定小字。视觉稿见 2026-09-05 的设计画布"客服 Agent 工作台"（方案 A）。
+
+字体 IBM Plex Sans / Mono（Google Fonts，离线时回退系统字体与 PingFang SC）；语义色只有四组：
+琥珀 = 待确认、红 = 拒绝、石板蓝 = 转人工、其余中性灰。
+
 ## 跑起来
 
 ```bash
@@ -50,7 +57,7 @@ VITE_HAS_GET_THREAD=1  # 已交付（main a81d059）
 输入含「写路径」或「未开」的话，可以看到**当前真实后端**的形状：待确认卡片照常渲染
 （金额与策略引用是真值），但 `action_id` / `confirm_url` / `expires_at` 为 null，确认按钮置灰。
 
-历史输入框填 `th_gone` 可以看到 §8.4 的 404 展示（"会话不存在或不属于你"）。
+左栏"按 thread_id 打开"填 `th_gone` 可以看到 §8.4 的 404 展示（"会话不存在或不属于你"）。
 
 ## 与后端契约对齐的几处（易踩）
 
@@ -74,12 +81,19 @@ src/
   api/mock.ts     同接口的假数据，VITE_USE_MOCK=1 时替换
   api/errors.ts   §8.4 的展示口径（404 不区分"不存在"与"不属于你"）
   api/session.ts  token 只存内存，不落 localStorage
-  timeline/reducer.ts   纯函数 (state, event) => state，无 DOM 依赖，有单测
-  timeline/*Item.tsx    四种时间线条目组件
-  timeline/decision.ts  六种 decision 的文案与配色表
+  timeline/reducer.ts   单条时间线的纯函数 (state, event) => state，无 DOM 依赖，有单测
+  timeline/workspace.ts 多会话工作区：若干条时间线 + 激活态 + 侧栏摘要选择器，有单测
+  timeline/*Item.tsx    四种时间线条目组件（AssistantFinalItem 含确认卡 / 说明卡）
+  timeline/decision.ts  六种 decision 的文案、色调、图标表
+  components/Sidebar.tsx        左栏会话列表 + 按 id 打开 + 身份
+  components/JudgmentPanel.tsx  右栏本轮判定（原 DebugDrawer）
+  components/Icon.tsx           线性 SVG 图标，不用 emoji
+  useWorkspace.ts       副作用层：建会话 / 发消息 / 确认 / 拉历史 / 切换，页面只排版
   pages/Login.tsx pages/Chat.tsx pages/Review.tsx
-  DebugDrawer.tsx 本轮 tools_used / usage / latency_ms / request_id
 ```
+
+会话列表现在只有本次会话里建过或打开过的 thread；后端 `GET /v1/threads`（FR-109，PRD v1.5）
+交付后，在 `thread.open` 时把服务端条目灌进 `workspace` 即可，组件不用改。
 
 `reducer.ts` 现在只认 `user.message` / `waiting` / `assistant.final` / `error` 四种事件。
 Phase 4 接 SSE 时加 `token` / `tool_started` 等事件，**state 与条目形状不变**。
@@ -87,7 +101,7 @@ Phase 4 接 SSE 时加 `token` / `tool_started` 等事件，**state 与条目形
 ## 检查
 
 ```bash
-npm run test    # vitest：reducer 单测，六种 decision 各一条 + 错误
+npm run test    # vitest：reducer 单测（六种 decision + 错误）+ workspace 单测（多会话）
 npm run lint    # eslint
 npm run build   # tsc -b && vite build
 
@@ -101,5 +115,5 @@ VITE_INTEGRATION=1 npm run test
 
 ## 不做
 
-主题切换、富文本输入、历史会话列表、嵌入组件、管理后台、流式渲染。
+主题切换、富文本输入、服务端会话列表（等 FR-109）、嵌入组件、管理后台、流式渲染。
 `#/review` 是 Phase 6 M6 的审批页，现在只有占位。

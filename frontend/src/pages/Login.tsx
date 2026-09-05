@@ -7,9 +7,10 @@
 
 import { useState } from 'react'
 
-import { USE_MOCK } from '../api'
+import { API_BASE, USE_MOCK } from '../api'
 import { describeError } from '../api/errors'
 import type { ApiClient, WhoAmI } from '../api/types'
+import Icon from '../components/Icon'
 
 interface Props {
   client: ApiClient
@@ -39,59 +40,70 @@ export default function Login({ client, onLogin }: Props) {
   }
 
   return (
-    <main className="shell">
-      <h1>客服 Agent · demo</h1>
-      <p className="muted">
-        当前数据源：{USE_MOCK ? 'mock（不需要后端）' : '真实后端'}
-      </p>
-
-      <section className="card">
-        <h2>用 user_id 换 token</h2>
-        <div className="row">
-          <input
-            className="input"
-            value={userId}
-            onChange={(e) => setUserId(e.target.value)}
-            inputMode="numeric"
-            aria-label="user_id"
-          />
-          <button
-            className="btn primary"
-            disabled={busy || !canIssue || !/^\d+$/.test(userId)}
-            onClick={() => run(() => client.issueDevToken(Number(userId)))}
-          >
-            换取 token 并登录
-          </button>
+    <main className="login">
+      <div className="login-card">
+        <div className="brand brand-lg">
+          <Icon name="chat" size={20} strokeWidth={1.8} />
+          <span>客服 Agent</span>
         </div>
-        {!canIssue && (
-          <p className="hint">
-            后端 <code>POST /v1/dev/token</code> 尚未交付（P1 进行中），此按钮暂不可用。
-            请用下面的粘贴框：本地跑 <code>make token USER={userId || '101'}</code> 签一个。
-          </p>
-        )}
-      </section>
+        <p className="muted">
+          {USE_MOCK ? 'mock 数据源，不需要后端，user_id 随便填。' : `后端 ${API_BASE}，身份以服务端 whoami 为准。`}
+        </p>
 
-      <section className="card">
-        <h2>或直接粘贴 token</h2>
-        <textarea
-          className="input mono"
-          rows={3}
-          value={pasted}
-          placeholder="eyJhbGciOiJIUzI1NiIs..."
-          onChange={(e) => setPasted(e.target.value)}
-          aria-label="token"
-        />
-        <button
-          className="btn"
-          disabled={busy || pasted.trim().length === 0}
-          onClick={() => run(async () => pasted.trim())}
-        >
-          用这个 token 登录
-        </button>
-      </section>
+        <section className="login-section">
+          <label className="field-label" htmlFor="login-user">
+            用 user_id 换取调试 token
+          </label>
+          <div className="row">
+            <input
+              id="login-user"
+              className="input mono"
+              value={userId}
+              onChange={(e) => setUserId(e.target.value)}
+              inputMode="numeric"
+            />
+            <button
+              className="btn btn-primary"
+              disabled={busy || !canIssue || !/^\d+$/.test(userId)}
+              onClick={() => run(() => client.issueDevToken(Number(userId)))}
+            >
+              登录
+            </button>
+          </div>
+          {!canIssue && (
+            <p className="hint">
+              后端 <span className="mono">POST /v1/dev/token</span> 未就绪。本地跑{' '}
+              <span className="mono">make token USER={userId || '101'}</span> 签一个，粘到下面。
+            </p>
+          )}
+        </section>
 
-      {busy && <p className="muted">正在校验身份…</p>}
-      {error && <p className="error-text">{error}</p>}
+        <div className="divider">
+          <span>或</span>
+        </div>
+
+        <section className="login-section">
+          <label className="field-label" htmlFor="login-token">
+            直接粘贴 token
+          </label>
+          <textarea
+            id="login-token"
+            className="input mono"
+            rows={3}
+            value={pasted}
+            placeholder="eyJhbGciOiJIUzI1NiIs..."
+            onChange={(e) => setPasted(e.target.value)}
+          />
+          <div className="row end">
+            <button className="btn" disabled={busy || pasted.trim().length === 0} onClick={() => run(async () => pasted.trim())}>
+              用这个 token 登录
+            </button>
+          </div>
+        </section>
+
+        {busy && <p className="muted small">正在校验身份…</p>}
+        {error && <p className="error-text">{error}</p>}
+      </div>
     </main>
   )
 }
