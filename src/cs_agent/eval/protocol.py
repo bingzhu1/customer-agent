@@ -9,6 +9,11 @@ V0 naive、V1 +Tools … V6 都实现 `AgentUnderTest`，报表曲线才可比�
   否则 seed 的窗口边界会漂移。
 - 副作用（是否真的写了 biz.refunds 等）由 runner 查库判定，**不信任**被测方自述。
 - 本文件是并行开发的共享接口：修改需同步 V0 实现与 runner，务必先在 HANDOFF 里声明。
+- 接口是**同步**的。runner 对并发 confirm 用**线程池**（ThreadPoolExecutor）并发调用同一个
+  `AgentSession.confirm()`；内部为 async 的实现（如 LangGraph + async DB）应自持一个事件循环
+  并做线程安全，不要在每次调用里 `asyncio.run`。
+- 已知待补（不影响 V0）：`Usage` 按轮聚合无法按模型拆分成本，Phase 6 考核成本前改为逐次调用列表；
+  检索 top-k 全集缺字段，Phase 2 前加 `retrieved` 以计算 recall@k。
 """
 
 from __future__ import annotations

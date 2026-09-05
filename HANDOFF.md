@@ -42,9 +42,16 @@
 |---|---|---|---|
 | master（本 session） | `phase0-eval-foundation` / 主目录 | `src/cs_agent/eval/**`（protocol 除外，改动需声明）、`tests/test_eval_*`、Makefile 的 eval target、`eval_reports/`、PROGRESS / HANDOFF | `cs_agent` |
 | session 2：V0 baseline | `phase0-v0-baseline` / `../ca-v0` | `src/cs_agent/agents/__init__.py`、`agents/v0_naive.py`、`tests/test_v0_naive.py` | `cs_agent`（只读，不跑 seed） |
-| session 3：Phase 1 预备 | `phase1-skeleton` / `../ca-phase1` | `alembic/versions/0002_*.py`、`db/models/agent.py`（只追加）、`src/cs_agent/auth/**`、`src/cs_agent/repositories/**`、对应 tests | `cs_agent_p1` |
+| session 3：Phase 1 | `phase1-skeleton` / `../ca-phase1` | Phase 1 全部范围（用户已在该 session 内验收 2 个 milestone：0002 迁移 + AuthContext + Repository；FastAPI / JWT / 可观测性，新依赖 fastapi / uvicorn / pyjwt / prometheus-client / httpx 已获用户同意）。共享文件改动：settings.py 加 jwt_*；test_migrations 合并时以 master 的一次性库版为准 | `cs_agent_p1` |
 
-合并顺序：V0 → phase0-eval-foundation → main（打 tag v0.1-phase0）→ phase1-skeleton rebase 到 main。
+合并顺序（用户 2026-09-05 拍板）：**等 V0 交付后**一并合——V0 → phase0-eval-foundation → main（tag `v0.1-phase0`）→ phase1-skeleton rebase 到 main。
+`uv.lock` 不手工合，合并后重跑 `uv sync`。
+
+### 2026-09-05 三方对齐结论
+
+- V0 session 此前因缺 `protocol.py` 停工，已 fetch 到 ba08ac8 并开工；计划 `agents/v0_naive.py` 的 `V0NaiveAgent`，client 注入式 mock。
+- `/v1/whoami` 保留并已补进 PRD §8.1（v1.1）。
+- 接口反馈处理：并发用线程已写进 protocol 文档；Usage 按模型拆分推到 Phase 6；`retrieved` 字段推到 Phase 2。
 
 ## 未决问题
 
