@@ -83,7 +83,7 @@ prompt caching、记忆压缩与三方对比、人工控制台、混沌测试。
 
 - [x] M1 `PolicyFacts` + `evaluate()` 策略引擎（`e2a5927`，待 master 审）（纯函数，FR-401/402）+ 契约 16 订单参数化 + 边界用例（FR-408）
 - [x] M2 `DecisionInput` + `decide()` §9.4（`e2a5927`，待 master 审） 有序矩阵（FR-404/405/406）+ 优先级测试
-- [ ] M3 master 审 `PolicyFacts` / `DecisionInput` 接口并定稿
+- [x] M3 master 审 `PolicyFacts` / `DecisionInput` 接口并定稿；ADR-0010 `b01b57c`
 - [x] M4 受约束话术骨架（拒绝 / 升级模板，LLM 只填变量，FR-407）· `add05c9`
 - [ ] M5 接入图（`policy_gate` / `decide` 节点，事实从 biz 实时查，FR-403）→ `make eval AGENT=v3`
 

@@ -1312,6 +1312,7 @@ Langfuse trace 命名约定：`thread_id` 为 session，单轮对话为一个 tr
 | ADR-0007 | 低置信检索采用"带声明回答 + 转人工入口"，含阈值标定 |
 | ADR-0008 | 工具签名中不暴露身份字段 |
 | ADR-0009 | 长期记忆不得参与授权与策略判断 |
+| ADR-0010 | PolicyFacts 与 DecisionInput 的字段边界与来源层（窄接口即防线） |
 
 ### 18.3 参考项目定位
 
