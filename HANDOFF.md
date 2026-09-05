@@ -86,6 +86,8 @@
 
 ## 已知坑
 
+- **记忆检索是纯 top 5 无阈值**（`288c2e1` 起 `language_preference` 固定注入）：记忆条数一多，与当前问句不相似的全局偏好会被挤出 top 5。以后再有"每轮都该生效"的 key，加进 `memory/user_memory.py` 的 `ALWAYS_INJECT_KEYS`，不要靠调 top_k。respond 提示词的语言顺序是：本轮要求 → 记忆 language_preference → 中文；非 ANSWER 终态仍逐字走模板，不受影响。
+
 - **2026-09-05 演示前发现**：订单 82913 被跨会话退了两次（agent_actions 166/168 均 succeeded，biz.refunds 9002/9003），幂等键按会话/窗口算绕过了同订单重复退款，`PolicyFacts.prior_refunds` 也未拦；τ_high=0.50 使同意图不同措辞可能落进低置信带转人工。两条都记在 `docs/demo/演示脚本.md` §5，待 Phase 4 / Phase 2 收尾时处理。
 
 - **本机 3000 端口被用户另一个项目占用**（`~/Desktop/bingzhu's file/spam` 的 tsx watch 服务），
