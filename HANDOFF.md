@@ -12,6 +12,7 @@
 - **Phase**：Phase 0 已合入 `main`（tag `v0.1-phase0`）；Phase 3 引擎 + 矩阵已合入 `main`；**3 小时冲刺进行中**，分工见 `docs/PLAN.md` 顶部
 - **分支**：`phase0-eval-foundation`（从 `main` 切出，尚未开 PR）
 - **Phase**：Phase 1 进行中 —— milestone 1（agent 平台表 + 身份 scope）已完成，等用户验收
+- **Phase**：Phase 1 进行中 —— milestone 1（agent 平台表 + 身份 scope）已验收；milestone 2（FastAPI 骨架 + JWT）已完成，等用户验收
 - **分支**：`phase1-skeleton`（worktree 目录 `~/Desktop/ca-phase1`，与主 checkout 隔离）
 - **最新 commit**：见 `git log -1`
 - **仓库**：https://github.com/bingzhu1/customer-agent （public）
@@ -21,6 +22,20 @@
   docker init 脚本只在空数据卷首次启动时跑，不会自动建这个库。
 
 ## Phase 0 收官产物
+## Phase 1 milestone 2 产物
+
+- `src/cs_agent/api/`：`main.py`（只做装配）、`middleware.py`（request_id → 指标 → 认证，
+  由外到内）、`errors.py`（§8.4 统一信封，404 不区分"不存在"与"不属于你"）、
+  `deps.py`（`AuthDep` / `SessionDep` / `BizRepoDep` / `require_role`）、
+  `routes/ops.py`（health / ready / metrics）、`routes/v1.py`（目前只有 `GET /v1/whoami` 认证自检）
+- `src/cs_agent/auth/jwt.py`：HS256 签发与校验，显式 `algorithms=["HS256"]` 防 alg 混淆；
+  校验失败一律 401 `UNAUTHENTICATED`，不区分签名错/过期/缺字段
+- `src/cs_agent/observability/`：structlog（contextvars 绑 request_id/user_id）与 Prometheus 指标
+- 新依赖：fastapi、uvicorn[standard]、pyjwt、prometheus-client、httpx(dev)
+- `make serve` 起服务、`make token USER=101` 签调试 token
+- 测试 143 个（新增 API 相关 30 个）
+
+## 树里已有的 Phase 0 产物：eval runner
 
 - eval runner（milestone 3）+ V0 naive baseline（session 2 交付，已合入）
 - V0 实测：1/54，硬门槛 FAIL，tokens/session 2782，$0.011/session；报表 `eval_reports/latest_v0-naive.md`，
@@ -49,11 +64,11 @@
 
 ## 下一步要做什么
 
-1. 用户验收 Phase 1 milestone 1
-2. milestone 2：FastAPI 骨架 —— `/health`、`/ready`、`/metrics`、`/v1` 前缀（FR-105/106/108），
-   JWT 认证中间件产出 `AuthContext`（FR-801/802），请求体中的身份字段一律忽略
-3. milestone 3：`POST /v1/threads`、`GET /v1/threads/{id}`（FR-101/104，他人会话 404）
-4. Phase 0 遗留：eval runner（`make eval`）与 V0 baseline 尚未做，见下方"已知坑"
+1. 用户验收 Phase 1 milestone 2
+2. milestone 3：`POST /v1/threads`、`GET /v1/threads/{id}`（FR-101/104，他人会话 404）
+3. milestone 4：LangGraph 最小图（ingest→understand→act→respond）+ Postgres checkpointer + 4 个只读工具
+4. 中间件还缺限流（FR-806，表已建）与超时；Phase 1 收官前补
+5. Phase 0 遗留：eval runner（`make eval`）与 V0 baseline 尚未做，见下方"已知坑"
 
 ## 并行分工（2026-09-05 起，Phase 0 例外放开）
 
@@ -115,3 +130,12 @@
   Phase 2 换 pgvector `vector(1536)` 并建 HNSW 索引，届时需要一次 ALTER 迁移。
 - Phase 0 的 milestone 3（eval runner）与 milestone 4（V0 baseline）**尚未完成**，
   Phase 0 未开 PR；Phase 1 先行，最后一并合入。
+- `GET /v1/whoami` 是我加的**认证自检接口**，PRD §8.1 没有它；留着方便手工验证链路，
+  不想要的话删掉即可，没有别的代码依赖它。
+- 中间件里**不能 raise `ApiError`**：异常处理器挂在更内层，中间件抛出的异常会直接变 500，
+  必须 `return error_response(...)`。
+- `BaseHTTPMiddleware` 的 `call_next` 在独立 task 里跑，内层绑的 contextvars 传不回外层，
+  所以访问日志的 `request_id` / `user_id` 是显式传参而不是靠 contextvars。
+- `structlog.testing.capture_logs()` 会丢掉 `merge_contextvars`，测日志字段要断言显式传的参数。
+- Prometheus 指标必须定义在模块顶层（默认 registry 只能注册一次），
+  否则 `create_app()` 被测试多次调用会抛重复注册。

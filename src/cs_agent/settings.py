@@ -18,6 +18,11 @@ class Settings(BaseSettings):
     # 数据库（ADR-0001：单实例双 schema）
     database_url: str = "postgresql+psycopg://cs_agent:cs_agent@localhost:5432/cs_agent"
 
+    # JWT（FR-801）。本阶段无登录流程，token 由 `cs_agent.auth.jwt.issue_token` 签发
+    jwt_secret: str = Field(default="", repr=False)
+    jwt_issuer: str = "cs-agent"
+    jwt_expire_minutes: int = 60
+
     # Langfuse
     langfuse_host: str = "http://localhost:3000"
     langfuse_public_key: str = ""
