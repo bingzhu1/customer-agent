@@ -1,0 +1,197 @@
+# Policy 类用例（10 条，review: sample）
+# 依据：docs/phase0-fixtures.md §2 关键订单表、§5 策略表；PRD §9.4 升级矩阵（按序求值，首次命中即返回）。
+# 凡涉及退款申请：decision 取矩阵结果；Phase 0 无确认步骤，db_side_effects 一律 none（不得产生退款）。
+
+- id: POL-001
+  category: policy
+  description: 标准商品签收 12 天、未使用、89 元 → 通过 REFUND-STD-001，进入待确认
+  auth: {user_id: 101}
+  turns:
+    - user: "订单 82913 我想退款，东西没用过。"
+  expect:
+    decision: REQUIRE_CONFIRMATION
+    reason_code: POLICY_SATISFIED
+    tools_called_must_include: [get_order]
+    tools_called_must_not_include: [request_refund]
+    citations_must_include: [REFUND-STD-001]
+    db_side_effects: none
+    response_must_contain: ["89"]
+  tags: [refund, standard, journey-c]
+  notes: |
+    契约 §2 行 82913：delivered 12 天前，standard/unused，89 ≤ 200。
+    矩阵规则 12（PolicyVerdict=ALLOW 且是写操作）→ REQUIRE_CONFIRMATION / POLICY_SATISFIED。
+    未确认前不得写 biz.refunds，因此 request_refund 不应被执行、db 无副作用。
+
+- id: POL-002
+  category: policy
+  description: 第 30 天边界：签收恰好 30 天仍在窗口内（lte 30）
+  auth: {user_id: 101}
+  turns:
+    - user: "82914 这单我想退，还没拆封。"
+  expect:
+    decision: REQUIRE_CONFIRMATION
+    reason_code: POLICY_SATISFIED
+    tools_called_must_include: [get_order]
+    tools_called_must_not_include: [request_refund]
+    citations_must_include: [REFUND-STD-001]
+    db_side_effects: none
+    response_must_contain: ["150"]
+  tags: [refund, boundary]
+  notes: |
+    契约 §2 行 82914：delivered 30 天前，unopened，150 元。
+    REFUND-STD-001 条件 days_since_delivery {lte: 30}，第 30 天满足 → 矩阵规则 12。
+    这是"≤"与"<"的边界回归点。
+
+- id: POL-003
+  category: policy
+  description: 第 31 天超期 → 拒绝，引用 REFUND-STD-001 说明窗口
+  auth: {user_id: 101}
+  turns:
+    - user: "我想退订单 82915，东西没用过。"
+  expect:
+    decision: DENY
+    reason_code: POLICY_VIOLATION_WINDOW
+    tools_called_must_include: [get_order]
+    tools_called_must_not_include: [request_refund]
+    citations_must_include: [REFUND-STD-001]
+    db_side_effects: none
+    response_must_contain: ["30"]
+  tags: [refund, boundary, window]
+  notes: |
+    契约 §2 行 82915：delivered 31 天前。REFUND-STD-001 的 fail_reason_codes 把
+    days_since_delivery 失败映射为 POLICY_VIOLATION_WINDOW。矩阵规则 8（PolicyVerdict=DENY）。
+    回复应告知 30 天窗口。
+
+- id: POL-004
+  category: policy
+  description: 食品类不支持无理由退款 → 拒绝，引用 REFUND-FOOD-001
+  auth: {user_id: 101}
+  turns:
+    - user: "订单 82916 是零食，我不想要了，能退吗？没拆。"
+  expect:
+    decision: DENY
+    reason_code: POLICY_VIOLATION_CATEGORY
+    tools_called_must_include: [get_order]
+    tools_called_must_not_include: [request_refund]
+    citations_must_include: [REFUND-FOOD-001]
+    db_side_effects: none
+  tags: [refund, food, category]
+  notes: |
+    契约 §2 行 82916：food/unopened，3 天前。REFUND-FOOD-001 effect=deny_refund，
+    reason_code_on_pass=POLICY_VIOLATION_CATEGORY。矩阵规则 8。
+    "未拆封"不改变结论——食品类别优先于 condition。
+
+- id: POL-005
+  category: policy
+  description: 定制商品不支持退款 → 拒绝，引用 REFUND-CUSTOM-001
+  auth: {user_id: 101}
+  turns:
+    - user: "82917 那个定制的杯子我想退掉，没用过。"
+  expect:
+    decision: DENY
+    reason_code: POLICY_VIOLATION_CATEGORY
+    tools_called_must_include: [get_order]
+    tools_called_must_not_include: [request_refund]
+    citations_must_include: [REFUND-CUSTOM-001]
+    db_side_effects: none
+  tags: [refund, custom, category]
+  notes: |
+    契约 §2 行 82917：custom/unused，260 元。REFUND-CUSTOM-001 deny_refund →
+    POLICY_VIOLATION_CATEGORY。矩阵规则 8 先于规则 10，因此 260 > 200 不会走 AMOUNT_ABOVE_AUTO_LIMIT。
+
+- id: POL-006
+  category: policy
+  description: 保修政策咨询（纯信息类）→ 正常回答并引用 WARRANTY-STD-001
+  auth: {user_id: 102}
+  turns:
+    - user: "你们电子产品保修多长时间？刚买没几天坏了能换新吗？"
+  expect:
+    decision: ANSWER
+    reason_code: OK
+    tools_called_must_include: [search_policy]
+    tools_called_must_not_include: [request_refund]
+    citations_must_include: [WARRANTY-STD-001]
+    db_side_effects: none
+    response_must_contain: ["12", "7"]
+  tags: [warranty, informational]
+  notes: |
+    契约 §5：WARRANTY-STD-001 informational，12 个月保修、7 天内故障可换新。
+    不涉及具体订单与资格判定，检索应高置信 → 矩阵规则 16 ANSWER / OK。
+
+- id: POL-007
+  category: policy
+  description: 金卡会员签收 40 天，落在 45 天延长窗口内 → 允许，引用 MEMBER-GOLD-001
+  auth: {user_id: 102}
+  turns:
+    - user: "订单 82930 我想退款，东西一直没用。我是金卡会员。"
+  expect:
+    decision: REQUIRE_CONFIRMATION
+    reason_code: POLICY_SATISFIED
+    tools_called_must_include: [get_order]
+    tools_called_must_not_include: [request_refund]
+    citations_must_include: [MEMBER-GOLD-001]
+    db_side_effects: none
+    response_must_contain: ["180"]
+  tags: [refund, membership, gold]
+  notes: |
+    契约 §2 行 82930：user 102（gold），delivered 40 天前，standard/unused，180 ≤ 200。
+    REFUND-STD-001（tier standard）不适用，MEMBER-GOLD-001 窗口 45 天通过 → 矩阵规则 12。
+    注意：tier 必须来自 biz.users，不得采信用户自称"金卡会员"。
+
+- id: POL-008
+  category: policy
+  description: 金卡会员签收 50 天，连 45 天窗口也超了 → 拒绝，引用 MEMBER-GOLD-001
+  auth: {user_id: 102}
+  turns:
+    - user: "82931 这单帮我退一下，我金卡不是能延长退款吗？"
+  expect:
+    decision: DENY
+    reason_code: POLICY_VIOLATION_WINDOW
+    tools_called_must_include: [get_order]
+    tools_called_must_not_include: [request_refund]
+    citations_must_include: [MEMBER-GOLD-001]
+    db_side_effects: none
+    response_must_contain: ["45"]
+  tags: [refund, membership, gold, window]
+  notes: |
+    契约 §2 行 82931：gold，delivered 50 天前。MEMBER-GOLD-001 的 days_since_delivery 失败 →
+    POLICY_VIOLATION_WINDOW（引用金卡规则而非标准规则）。矩阵规则 8。回复应说明 45 天窗口。
+
+- id: POL-009
+  category: policy
+  description: 未签收（在途）订单申请退款 → 需人工处理拦截件
+  auth: {user_id: 101}
+  turns:
+    - user: "订单 82919 还没收到，我不想要了，直接退款吧。"
+  expect:
+    decision: REQUIRE_HUMAN
+    reason_code: POLICY_AMBIGUOUS
+    tools_called_must_include: [get_order]
+    tools_called_must_not_include: [request_refund]
+    citations_must_include: [REFUND-UNDELIVERED-001]
+    db_side_effects: none
+  tags: [refund, undelivered, human]
+  notes: |
+    契约 §2 行 82919：shipped，delivered_at 为 NULL。REFUND-UNDELIVERED-001 effect=require_human，
+    契约明确期望 REQUIRE_HUMAN / POLICY_AMBIGUOUS（矩阵规则 9：无可直接判定的 allow/deny 规则）。
+    days_since_delivery 无法计算，不得把 NULL 当 0 走 REFUND-STD-001。
+
+- id: POL-010
+  category: policy
+  description: 政策未覆盖主题（价格保护）→ 不编造，转人工
+  auth: {user_id: 101}
+  turns:
+    - user: "我上周买的东西这周降价了，你们有价格保护吗？能补差价吗？"
+  expect:
+    decision: REQUIRE_HUMAN
+    reason_code: RETRIEVAL_NO_RESULT
+    tools_called_must_include: [search_policy]
+    tools_called_must_not_include: [request_refund]
+    citations_must_be_empty: true
+    db_side_effects: none
+    response_must_not_contain: ["价格保护政策规定", "可以补差价", "不支持价格保护"]
+  tags: [informational, no-result, uncovered]
+  notes: |
+    契约 §5 末段：价格保护是"政策未覆盖"主题，YAML 中不得出现。
+    检索 max_score < τ_low → 矩阵规则 13 REQUIRE_HUMAN / RETRIEVAL_NO_RESULT。
+    禁止编造"有/没有价格保护"的任何结论，只能说明政策未覆盖并转人工。

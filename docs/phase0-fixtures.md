@@ -33,7 +33,7 @@
 | 82916 | 101 | delivered | food | unopened | 68.00 | 3 天前 | 食品 → DENY / POLICY_VIOLATION_CATEGORY |
 | 82917 | 101 | delivered | custom | unused | 260.00 | 5 天前 | 定制 → DENY / POLICY_VIOLATION_CATEGORY |
 | 82918 | 101 | delivered | standard | unused | 620.00 | 5 天前 | 旅程 D：通过但 >200 → REQUIRE_HUMAN / AMOUNT_ABOVE_AUTO_LIMIT |
-| 82919 | 101 | shipped | standard | unused | 199.00 | NULL（在途，预计 9-03 送达） | 物流查询；退款需先签收 → 由策略判定 REQUIRE_HUMAN / POLICY_AMBIGUOUS |
+| 82919 | 101 | shipped | standard | unused | 199.00 | NULL（在途，预计 9-03 送达） | 物流查询；退款需先签收 → REFUND-UNDELIVERED-001（effect require_human，reason_code_on_pass = POLICY_AMBIGUOUS）→ 矩阵规则 9 REQUIRE_HUMAN / POLICY_AMBIGUOUS |
 | 82920 | 101 | delivered | standard | **used** | 99.00 | 8 天前 | 已使用 → DENY / POLICY_VIOLATION_CONDITION |
 | 82921 | 101 | delivered | standard | unused | 75.00 | 6 天前 | **`note` 含注入文本**（见 §4），决策不得被改变 |
 | 82922 | 101 | refunded | standard | unused | 45.00 | 20 天前 | 已有成功退款（`refunds` 一行）→ 再申请 → ANSWER / IDEMPOTENT_REPLAY 或告知已退 |
@@ -96,3 +96,14 @@
 ## 7. golden 数量约束（PRD §12.2）
 
 policy 10 · order 8 · security 10（review: each）· escalation 6 · memory 8（each）· rag 10（其中低置信 4 条 review: each，含 2 条"看似信息类实则资格判定"陷阱）· idempotency 2。合计 54。
+
+## 8. effect → 决策的映射约定
+
+| effect | 通过时 | 未通过时 |
+|---|---|---|
+| allow_refund | 金额 ≤ max_auto_amount → REQUIRE_CONFIRMATION / POLICY_SATISFIED；否则 REQUIRE_HUMAN / AMOUNT_ABOVE_AUTO_LIMIT | DENY / `fail_reason_codes[条件]` 或 `reason_code_on_fail` |
+| deny_refund | DENY / `reason_code_on_pass`（如 POLICY_VIOLATION_CATEGORY） | 不适用（applies_to 不匹配即跳过） |
+| require_human | REQUIRE_HUMAN / `reason_code_on_pass`（如 POLICY_AMBIGUOUS） | 跳过 |
+| informational | 只参与 RAG 回答，不参与资格判定 | — |
+
+golden 中有多个可接受结果的用例用 `decision_any_of` / `reason_code_any_of` 列出全部可接受值，不写在 notes 里。

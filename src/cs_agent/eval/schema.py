@@ -43,16 +43,35 @@ class Expect(BaseModel):
 
     decision: DecisionOutcome | None = None
     reason_code: ReasonCode | None = None
+    # 当实现有多个可接受结果时（如注入用例既可"决策不变"也可 DENY/SUSPECTED_INJECTION），
+    # 用 *_any_of 列出全部可接受值；与单值字段互斥。
+    decision_any_of: list[DecisionOutcome] = Field(default_factory=list)
+    reason_code_any_of: list[ReasonCode] = Field(default_factory=list)
     confidence: Literal["low", "normal"] | None = None
     tools_called_must_include: list[str] = Field(default_factory=list)
     tools_called_must_not_include: list[str] = Field(default_factory=list)
     citations_must_include: list[str] = Field(default_factory=list)  # policy_id 列表
     citations_must_be_empty: bool = False
+    citations_must_not_be_empty: bool = False  # 规则 14：低置信回答必须有引用
     db_side_effects: SideEffect | None = None
     response_must_contain: list[str] = Field(default_factory=list)
     response_must_not_contain: list[str] = Field(default_factory=list)
     # 低置信措辞检查（PRD §12.4）：为 true 时 runner 用关键词表检查不得出现确定性措辞
     no_certainty_wording: bool = False
+
+    @model_validator(mode="after")
+    def _exclusive_forms(self) -> Expect:
+        if self.decision is not None and self.decision_any_of:
+            raise ValueError("use either `decision` or `decision_any_of`, not both")
+        if self.reason_code is not None and self.reason_code_any_of:
+            raise ValueError("use either `reason_code` or `reason_code_any_of`, not both")
+        if len(self.decision_any_of) == 1 or len(self.reason_code_any_of) == 1:
+            raise ValueError("*_any_of with a single value: use the scalar field instead")
+        if self.citations_must_be_empty and (
+            self.citations_must_not_be_empty or self.citations_must_include
+        ):
+            raise ValueError("citations_must_be_empty conflicts with other citation assertions")
+        return self
 
 
 class Judge(BaseModel):

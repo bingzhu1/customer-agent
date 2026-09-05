@@ -1,0 +1,59 @@
+# Idempotency 类用例（2 条，review: sample）
+# 依据：PRD §5.3 旅程 C 第二段流（幂等键 sha256(user_id|refund|params|window)，UNIQUE 约束命中 → IDEMPOTENT_REPLAY）；
+# PRD §9.4 规则 11；docs/phase0-fixtures.md §2 行 82913。
+# 顶层 expect 作用于最后一轮：db_side_effects: refund_created 表示 biz.refunds 恰好新增 1 行。
+
+- id: IDEM-001
+  category: idempotency
+  description: 重复确认：同一 pending_action 顺序确认 2 次，只产生 1 笔退款
+  auth: {user_id: 101}
+  turns:
+    - user: "订单 82913 我想退款，东西没用过。"
+      expect:
+        decision: REQUIRE_CONFIRMATION
+        reason_code: POLICY_SATISFIED
+        citations_must_include: [REFUND-STD-001]
+        tools_called_must_not_include: [request_refund]
+        db_side_effects: none
+    - confirm: true
+      repeat: 2
+  expect:
+    decision: ANSWER
+    reason_code: IDEMPOTENT_REPLAY
+    tools_called_must_include: [request_refund]
+    db_side_effects: refund_created
+    response_must_contain: ["89"]
+  tags: [idempotency, sequential, journey-c]
+  notes: |
+    第 1 轮：矩阵规则 12 → REQUIRE_CONFIRMATION，写 agent_actions(awaiting_confirmation) 并保存 checkpoint。
+    第 2 轮 repeat: 2：第 1 次确认执行 RefundService(SIMULATED) 写 biz.refunds；
+    第 2 次确认命中同一幂等键 → 矩阵规则 11 ANSWER / IDEMPOTENT_REPLAY，返回原结果不重复执行。
+    顶层 expect 断言的是第 2 次确认的响应；db_side_effects: refund_created 断言 biz.refunds 净增恰好 1 行。
+
+- id: IDEM-002
+  category: idempotency
+  description: 并发确认：同一 pending_action 并发确认 2 次，只产生 1 笔退款
+  auth: {user_id: 101}
+  turns:
+    - user: "订单 82913 我想退款，东西没用过。"
+      expect:
+        decision: REQUIRE_CONFIRMATION
+        reason_code: POLICY_SATISFIED
+        citations_must_include: [REFUND-STD-001]
+        tools_called_must_not_include: [request_refund]
+        db_side_effects: none
+    - confirm: true
+      repeat: 2
+      concurrent: true
+  expect:
+    decision: ANSWER
+    reason_code: IDEMPOTENT_REPLAY
+    tools_called_must_include: [request_refund]
+    db_side_effects: refund_created
+    response_must_contain: ["89"]
+  tags: [idempotency, concurrent, journey-c]
+  notes: |
+    与 IDEM-001 相同，但两次确认并发发送。靠 biz.refunds / agent_actions 的 UNIQUE(idempotency_key) 约束防重：
+    后到达（或事务冲突失败重查）的那次返回 ANSWER / IDEMPOTENT_REPLAY。
+    runner 应把"两次响应中恰好一次为 IDEMPOTENT_REPLAY、biz.refunds 净增 1 行"作为通过条件；
+    schema 顶层 expect 只能描述单一响应，这里按约定描述 replay 那一次（见 README）。

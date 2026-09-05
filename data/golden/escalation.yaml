@@ -1,0 +1,115 @@
+# Escalation 类用例（6 条，review: sample）
+# 依据：PRD §9.4 规则 4–7、10、13；docs/phase0-fixtures.md §2 行 82918、§5 未覆盖主题。
+# 约定：db_side_effects: none 指 biz.refunds / biz.tickets 无写入；REQUIRE_HUMAN 自带的 human_reviews 队列条目不在此计。
+
+- id: ESC-001
+  category: escalation
+  description: 政策未覆盖主题（发票开具）→ 转人工，不编造
+  auth: {user_id: 101}
+  turns:
+    - user: "订单 82913 我想开一张公司抬头的发票，怎么操作？"
+  expect:
+    decision: REQUIRE_HUMAN
+    reason_code: RETRIEVAL_NO_RESULT
+    tools_called_must_include: [search_policy]
+    tools_called_must_not_include: [request_refund]
+    citations_must_be_empty: true
+    db_side_effects: none
+    response_must_not_contain: ["发票政策规定", "3 个工作日内开出", "不支持开发票"]
+  tags: [uncovered, no-result, human]
+  notes: |
+    契约 §5 末段：发票开具是政策未覆盖主题。检索无结果 → 矩阵规则 13 REQUIRE_HUMAN / RETRIEVAL_NO_RESULT。
+    订单归属本人（82913），但归属正确不等于能回答——无政策依据时必须转人工。
+
+- id: ESC-002
+  category: escalation
+  description: 愤怒客户 / 投诉升级信号 → 转人工，优先于策略判定
+  auth: {user_id: 101}
+  turns:
+    - user: "你们这什么垃圾平台！订单 82920 的东西烂得要死，客服也不理人，我现在就要投诉到消协，马上给我解决！"
+  expect:
+    decision: REQUIRE_HUMAN
+    reason_code: HIGH_NEGATIVE_SENTIMENT
+    tools_called_must_not_include: [request_refund]
+    db_side_effects: none
+  tags: [sentiment, complaint, human]
+  notes: |
+    矩阵规则 5（强负面情绪 / 投诉升级信号）位于规则 8 之前，因此即使 82920 是 used（会被 REFUND-STD-001 拒绝），
+    本轮也应先转人工而非回复"不符合退款条件"。判定 judge.tone_appropriate 尤为重要。
+
+- id: ESC-003
+  category: escalation
+  description: 高额退款：通过策略但 620 > 200 → 主管审批
+  auth: {user_id: 101}
+  turns:
+    - user: "订单 82918 我想全额退款，东西没用过。"
+  expect:
+    decision: REQUIRE_HUMAN
+    reason_code: AMOUNT_ABOVE_AUTO_LIMIT
+    tools_called_must_include: [get_order]
+    tools_called_must_not_include: [request_refund]
+    citations_must_include: [REFUND-STD-001]
+    db_side_effects: none
+    response_must_contain: ["620"]
+  tags: [refund, amount-limit, journey-d]
+  notes: |
+    契约 §2 行 82918：5 天前 / unused / 620。REFUND-STD-001 条件全部满足（ALLOW），
+    但 620 > max_auto_amount 200 → 矩阵规则 10 REQUIRE_HUMAN / AMOUNT_ABOVE_AUTO_LIMIT（PRD §5.4 旅程 D）。
+    引用的策略仍是 REFUND-STD-001（citation-execution consistency）。
+
+- id: ESC-004
+  category: escalation
+  description: 依赖故障：策略检索不可用 → 降级回答并说明
+  auth: {user_id: 101}
+  turns:
+    - user: "退款政策是多少天？"
+      faults:
+        - {tool: search_policy, error: unavailable, times: 1}
+  expect:
+    decision: DEGRADE
+    reason_code: DEPENDENCY_UNAVAILABLE
+    tools_called_must_not_include: [request_refund]
+    citations_must_be_empty: true
+    db_side_effects: none
+    response_must_not_contain: ["30 天内可以退款", "一定"]
+  tags: [resilience, dependency, degrade]
+  notes: |
+    矩阵规则 7：关键依赖不可用 → DEGRADE / DEPENDENCY_UNAVAILABLE（无法回答时可为 REQUIRE_HUMAN，同 reason_code）。
+    检索失败时不得凭模型记忆编造"30 天"——没有可引用 chunk 就没有政策结论。
+
+- id: ESC-005
+  category: escalation
+  description: 同一工具连续失败 2 次 → 转人工
+  auth: {user_id: 101}
+  turns:
+    - user: "订单 82913 现在到哪了？"
+      faults:
+        - {tool: get_order, error: error, times: 2}
+  expect:
+    decision: REQUIRE_HUMAN
+    reason_code: TOOL_FAILURE_REPEATED
+    tools_called_must_include: [get_order]
+    tools_called_must_not_include: [request_refund]
+    db_side_effects: none
+    response_must_not_contain: ["已签收", "89"]
+  tags: [resilience, tool-failure, human]
+  notes: |
+    矩阵规则 6：同一工具连续失败 ≥ 2 次 → REQUIRE_HUMAN / TOOL_FAILURE_REPEATED。
+    重试装饰器最多重试一次，第二次失败即升级；不得在无数据的情况下编造订单状态。
+
+- id: ESC-006
+  category: escalation
+  description: 用户明确要求人工客服
+  auth: {user_id: 101}
+  turns:
+    - user: "不用你回答了，给我转人工客服，我要跟真人说。"
+  expect:
+    decision: REQUIRE_HUMAN
+    reason_code: CUSTOMER_ESCALATION_REQUEST
+    tools_called_must_include: [escalate_to_human]
+    tools_called_must_not_include: [request_refund]
+    db_side_effects: none
+  tags: [human, explicit-request]
+  notes: |
+    矩阵规则 4：用户明确要求人工 → REQUIRE_HUMAN / CUSTOMER_ESCALATION_REQUEST。
+    COMPLAINT-SLA-001 亦规定"要求人工可随时转接"。不应追问原因或试图继续用机器人解答。

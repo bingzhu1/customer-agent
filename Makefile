@@ -32,11 +32,11 @@ fmt:              ## 自动格式化
 	uv run ruff format .
 	uv run ruff check --fix .
 
-migrate:          ## 执行数据库迁移（Alembic，Phase 0 后续 milestone 接入）
-	@echo "TODO: uv run alembic upgrade head"
+migrate:          ## 执行数据库迁移（Alembic，版本表在 agent schema）
+	uv run alembic upgrade head
 
-seed:             ## 灌入 biz 种子数据（Phase 0 后续 milestone 接入）
-	@echo "TODO: uv run python -m cs_agent.seed"
+seed:             ## 灌入 biz 种子数据（幂等，可重复执行）
+	uv run python -m cs_agent.seed.biz_seed
 
 eval:             ## 跑 golden dataset，输出报表（Phase 0 后续 milestone 接入）
 	@echo "TODO: uv run python -m cs_agent.eval"

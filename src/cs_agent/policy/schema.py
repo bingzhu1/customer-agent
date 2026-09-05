@@ -6,6 +6,7 @@ policies/*.yaml 是唯一事实来源：RAG chunk 由此生成（Phase 2），�
 
 from __future__ import annotations
 
+from datetime import date
 from decimal import Decimal
 from pathlib import Path
 from typing import Annotated, Any, Literal
@@ -45,6 +46,10 @@ class Condition(BaseModel):
             for v in (self.eq, self.ne, self.lt, self.lte, self.gt, self.gte, self.in_, self.not_in)
         ):
             raise ValueError("condition must specify at least one operator")
+        if (self.eq is not None or self.ne is not None) and (
+            self.in_ is not None or self.not_in is not None
+        ):
+            raise ValueError("eq/ne and in/not_in are mutually exclusive")
         return self
 
 
@@ -58,12 +63,21 @@ class AppliesTo(BaseModel):
     ticket_type: str | list[str] | None = None
 
 
+class FaqEntry(BaseModel):
+    """附着在规则下的问答对，用于生成长文 FAQ chunk（PRD §11 ①）。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    q: str
+    a: str
+
+
 class PolicyRule(BaseModel):
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
     id: Annotated[str, Field(pattern=POLICY_ID_PATTERN)]
     version: Annotated[int, Field(ge=1)]
-    effective_date: str  # ISO 日期字符串，保持与 YAML 原样一致
+    effective_date: date
     domain: PolicyDomain
     applies_to: AppliesTo = Field(default_factory=AppliesTo)
     conditions: dict[str, Condition] = Field(default_factory=dict)
@@ -88,24 +102,31 @@ class PolicyRule(BaseModel):
             a = self.applies_to
             if not any((a.item_category, a.user_tier, a.ticket_type)):
                 raise ValueError(f"{self.id}: decisional rule must declare applies_to")
+        if self.effect is PolicyEffect.REQUIRE_HUMAN and self.reason_code_on_pass is None:
+            raise ValueError(f"{self.id}: require_human rule needs reason_code_on_pass")
+        if self.effect is PolicyEffect.INFORMATIONAL:
+            forbidden = {
+                "conditions": self.conditions,
+                "max_auto_amount": self.max_auto_amount,
+                "requires_approval_above": self.requires_approval_above,
+                "reason_code_on_pass": self.reason_code_on_pass,
+                "reason_code_on_fail": self.reason_code_on_fail,
+                "fail_reason_codes": self.fail_reason_codes,
+            }
+            present = [k for k, v in forbidden.items() if v]
+            if present:
+                raise ValueError(f"{self.id}: informational rule must not set {present}")
         for key in self.fail_reason_codes:
             if key not in self.conditions:
                 raise ValueError(f"{self.id}: fail_reason_codes key {key!r} not in conditions")
         if self.requires_approval_above is not None and self.max_auto_amount is not None:
             if self.requires_approval_above != self.max_auto_amount:
                 raise ValueError(f"{self.id}: requires_approval_above must equal max_auto_amount")
+        if self.anchor.split("#", 1)[0] != self.domain.value:
+            raise ValueError(f"{self.id}: anchor prefix must equal domain {self.domain.value!r}")
         if not self.human_text.strip():
             raise ValueError(f"{self.id}: human_text is required")
         return self
-
-
-class FaqEntry(BaseModel):
-    """附着在规则下的问答对，用于生成长文 FAQ chunk（PRD §11 ①）。"""
-
-    model_config = ConfigDict(extra="forbid")
-
-    q: str
-    a: str
 
 
 class PolicySet(BaseModel):
