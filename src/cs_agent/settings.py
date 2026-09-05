@@ -36,8 +36,15 @@ class Settings(BaseSettings):
     langfuse_public_key: str = ""
     langfuse_secret_key: str = Field(default="", repr=False)
 
+    #: 允许跨域的前端来源，逗号分隔。默认只放开本地 Vite 开发服务器。
+    cors_origins: str = "http://localhost:5173"
+
     app_env: str = "dev"
     log_level: str = "INFO"
+
+    @property
+    def cors_origin_list(self) -> list[str]:
+        return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
 
     @property
     def llm_configured(self) -> bool:
