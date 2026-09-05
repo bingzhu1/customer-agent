@@ -1,0 +1,105 @@
+# 退款域策略。结构与字段见 src/cs_agent/policy/schema.py；id/版本/要点以 docs/phase0-fixtures.md §5 为准。
+# 规则变更必须递增 version 并更新 effective_date，不允许原地修改旧版本。
+
+- id: REFUND-STD-001
+  version: 3
+  effective_date: "2026-05-15"
+  domain: refund
+  applies_to:
+    item_category: standard
+    user_tier: standard
+  conditions:
+    days_since_delivery: {lte: 30}
+    item_condition: {in: [unused, unopened]}
+  effect: allow_refund
+  max_auto_amount: 200
+  requires_approval_above: 200
+  reason_code_on_pass: POLICY_SATISFIED
+  reason_code_on_fail: POLICY_VIOLATION_CONDITION
+  fail_reason_codes:
+    days_since_delivery: POLICY_VIOLATION_WINDOW
+    item_condition: POLICY_VIOLATION_CONDITION
+  anchor: "refund#standard"
+  title: 标准商品退款规则（普通会员）
+  human_text: |
+    普通会员购买的标准商品，自签收之日起 30 天内（含第 30 天），商品保持未使用或未拆封状态的，可申请全额退款。
+    超过 30 天，或商品已使用、已损坏的，不符合退款条件。
+    单笔退款金额不超过 200 元的，您确认后系统即可自动办理；超过 200 元的需转由人工审批后处理。
+    退款将原路退回至您的支付账户。
+  faq:
+    - q: 我买的东西签收快一个月了，还能退吗？
+      a: 只要在签收后 30 天以内（含第 30 天），且商品未使用或未拆封，就可以申请全额退款；超过 30 天则不再符合条件。
+    - q: 我拆开看了一下但没用过，能退吗？
+      a: 可以。退款要求商品为未使用或未拆封状态，拆封但未使用仍然符合条件；如已使用或有损坏则无法退款。
+    - q: 退 500 块钱的东西需要等多久？
+      a: 单笔退款超过 200 元需要人工审批，审批通过后才会退回；200 元以内的确认后即可自动办理。
+
+- id: REFUND-FOOD-001
+  version: 2
+  effective_date: "2026-04-10"
+  domain: refund
+  applies_to:
+    item_category: food
+  effect: deny_refund
+  reason_code_on_pass: POLICY_VIOLATION_CATEGORY
+  reason_code_on_fail: POLICY_AMBIGUOUS
+  anchor: "refund#food"
+  title: 食品类商品不支持无理由退款
+  human_text: |
+    食品类商品属于易腐易变质商品，不支持七天无理由退款，签收后不能因个人口味或不再需要等原因申请退款。
+    如收到的食品存在变质、破损、临期或与描述不符等质量问题，请在签收后 48 小时内联系客服并提供照片，我们会转交人工专员核实处理。
+    超过 48 小时提出的质量问题将难以核实，可能无法受理。
+  faq:
+    - q: 买的零食不合口味，可以退吗？
+      a: 食品类商品不支持无理由退款，口味不合适不属于可退款的原因。
+    - q: 收到的食品已经坏了怎么办？
+      a: 请在签收后 48 小时内联系客服并提供照片，人工专员核实后会为您处理；超过 48 小时可能无法受理。
+    - q: 食品的质量问题客服能直接退款吗？
+      a: 不能自动办理。食品质量问题需要人工专员核实，请在签收后 48 小时内反馈，由人工处理。
+
+- id: REFUND-CUSTOM-001
+  version: 1
+  effective_date: "2026-01-15"
+  domain: refund
+  applies_to:
+    item_category: custom
+  effect: deny_refund
+  reason_code_on_pass: POLICY_VIOLATION_CATEGORY
+  reason_code_on_fail: POLICY_AMBIGUOUS
+  anchor: "refund#custom"
+  title: 定制类商品不支持退款
+  human_text: |
+    定制类商品是按照您提供的尺寸、文字、图案等个性化要求专门制作的，一经制作即无法二次销售，因此不支持退款，也不支持无理由退货。
+    下单前请务必仔细核对定制信息；订单进入制作后不能取消。
+    如收到的定制商品与您确认的定制内容不符或存在制作缺陷，请联系客服，由人工专员核实后协商处理方案。
+  faq:
+    - q: 定制的东西不想要了能退吗？
+      a: 不能。定制类商品是按您的个性化要求专门制作的，不支持退款和无理由退货。
+    - q: 定制商品做错了怎么办？
+      a: 如果商品与您确认的定制内容不符或有制作缺陷，请联系客服，人工专员核实后会与您协商处理方案。
+    - q: 定制单下完还能改吗？
+      a: 订单进入制作后不能取消，请在下单前仔细核对定制信息。
+
+- id: REFUND-UNDELIVERED-001
+  version: 1
+  effective_date: "2026-02-01"
+  domain: refund
+  applies_to:
+    item_category: [standard, food, custom]
+  conditions:
+    order_delivered: {eq: false}
+  effect: require_human
+  reason_code_on_pass: POLICY_AMBIGUOUS
+  anchor: "refund#undelivered"
+  title: 未签收订单申请退款需人工处理
+  human_text: |
+    订单已发出但尚未签收时，如需退款，系统不能直接办理，需要由人工专员先联系承运商尝试拦截包裹。
+    拦截成功后，退款会在包裹退回仓库并完成验收后原路退回；拦截失败的，请在签收后按对应商品类别的退款规则申请。
+    我们会为您登记请求并尽快由人工跟进。
+  faq:
+    - q: 东西还没收到，我现在不想要了能退款吗？
+      a: 可以提出申请，但未签收订单的退款需要人工专员先联系承运商拦截包裹，系统不能直接办理。
+    - q: 拦截件的退款多久到账？
+      a: 拦截成功后，包裹退回仓库并完成验收，退款即原路退回；具体时间以人工专员告知为准。
+    - q: 如果拦截不成功怎么办？
+      a: 请在签收后按对应商品类别的退款规则重新申请，人工专员也会告知您后续步骤。

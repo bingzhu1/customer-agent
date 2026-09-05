@@ -1,6 +1,6 @@
 # CLAUDE.md — 项目工作规则
 
-> 本文件是 Claude Code 在本仓库的行为约束。**每次开工第一件事：读 `HANDOFF.md`。**
+> 本文件是 Claude Code 在本仓库的行为约束。**每次开工第一件事：读 `HANDOFF.md`，再对照 `docs/PLAN.md` 找到自己的 milestone。**
 
 ---
 
@@ -161,7 +161,12 @@ chore: 杂项
 踩过的坑、绕过的问题、临时方案
 ```
 
-### 6.3 决策记录
+### 6.3 `docs/PLAN.md` —— 跨 Phase 的 checklist
+
+地图。每个 Phase 的 milestone 与 DoD 逐条带复选框、负责 session、完成日期与 commit。
+**完成必须勾并填 commit；计划里没有的工作先加进 PLAN 再动手**；计划外事项记入末尾"偏离记录"。
+
+### 6.4 决策记录
 
 架构决策写 `docs/adr/`，一个决策一篇，不改旧的，只加新的（用 `Superseded by ADR-XXXX` 标记）。
 

@@ -9,71 +9,75 @@
 
 ## 当前状态
 
-- **Phase**：Phase 0 未开始（PRD 与工作规则已成文，等用户评审通过）
-- **分支**：`main`
-- **最新 commit**：见 `git log -1`（截至交接：`25e5fc4` + PROGRESS hash 修正）
+- **Phase**：**Phase 0 完成**，PR `phase0-eval-foundation → main` 待用户合入；合入后打 tag `v0.1-phase0`
+- **分支**：`phase0-eval-foundation`（从 `main` 切出，尚未开 PR）
+- **最新 commit**：见 `git log -1`
 - **仓库**：https://github.com/bingzhu1/customer-agent （public）
-- **代码**：尚未写任何代码。目前只有文档。
+- **模型**：本 session 为 Fable 5.1，上一 session 的模型切换问题已不存在
 
----
+## Phase 0 收官产物
 
-## 已完成
-
-- `docs/PRD.md` v1.0 —— 完整产品与技术需求文档（18 章）
-- `CLAUDE.md` —— 工作规则、三条红线、分层边界、Git/测试/并行规范
-- `docs/adr/0001` ~ `0009` —— 九篇架构决策记录
-- `.gitignore`
-
----
+- eval runner（milestone 3）+ V0 naive baseline（session 2 交付，已合入）
+- V0 实测：1/54，硬门槛 FAIL，tokens/session 2782，$0.011/session；报表 `eval_reports/latest_v0-naive.md`，
+  分析 `docs/eval/v0-baseline.md`（五类典型错误 + 记忆指标的反直觉说明）
+- 首次跑有 5 条 APIConnectionError，已删报表重跑，第二次 54 条零异常（eval_run_id 4）
 
 ## 下一步要做什么
 
-**当前唯一阻塞项**：用户需回答"单会话成本目标 $0.05 维持还是放宽"（未决问题 2）。
-我的建议是维持，作为倒逼优化的压力，Phase 6 实测不达标时据实修订目标。
+1. 用户合 PR → master 拉 main 打 tag `v0.1-phase0` → 通知 Phase 1 / Phase 3 各做 `git rebase main`
+2. master 职责转为：审各 session 交付、合并、跑 `make test` + `make eval` 看回归；V1 落地后 `make eval AGENT=v1` 对照 V0
+3. Phase 3（策略引擎 + 决策层）交付后审 `PolicyFacts` / `DecisionInput` 接口并定稿，供 Phase 1 接线
 
-回答后即可动工：
+## 并行分工（2026-09-05 起，Phase 0 例外放开）
 
-1. 开分支 `phase0-eval-foundation`
-2. Phase 0 首批产物（文件不相交，**用户已同意用 subagent 并行**）：
-   - `biz` seed 数据（约 20 用户 / 60 订单，含超期、食品、定制、高额边界样本）
-   - `policies/*.yaml`（退款 / 物流 / 保修 / 会员 / 投诉），格式见 PRD §9.2
-   - golden dataset 34–54 条，格式见 PRD §12.3，分类与条数见 §12.2
-3. 再串行做：docker-compose(pg + langfuse)、Alembic、eval runner、V0 naive baseline 实测
-4. Phase 0 的 DoD 见 PRD §15
+共享接口 `src/cs_agent/eval/protocol.py` 已锁定；改它必须先在此处声明并通知所有 session。
+每个 worktree 用**独立数据库名**（seed 会清空 biz 表，alembic 版本表不能共用）。各分支只 push 不合并，合并顺序由 master 定。
 
-**新 session 的第一件事**：读 `CLAUDE.md`（工作规则，含回复格式与三条红线）
-和 `docs/PRD.md`（§15 路线图 + §12 评估方案是 Phase 0 的直接依据）。
+| session | 分支 / 目录 | 只能动的文件 | 数据库 |
+|---|---|---|---|
+| master（本 session） | `phase0-eval-foundation` / 主目录 | `src/cs_agent/eval/**`（protocol 除外，改动需声明）、`tests/test_eval_*`、Makefile 的 eval target、`eval_reports/`、PROGRESS / HANDOFF | `cs_agent` |
+| session 2：V0 baseline | `phase0-v0-baseline` / `../ca-v0` | **已交付并合入**，session 可关闭 | — |
+| session 4：Phase 3 | `phase3-policy-engine` / `../ca-phase3` | `policy/facts.py`、`policy/engine.py`、`decision/**`、对应 tests（纯函数，无 IO / LLM）；只读 `policy/schema.py` | `cs_agent_p3` |
+| session 3：Phase 1 | `phase1-skeleton` / `../ca-phase1` | Phase 1 全部范围（用户已在该 session 内验收 2 个 milestone：0002 迁移 + AuthContext + Repository；FastAPI / JWT / 可观测性，新依赖 fastapi / uvicorn / pyjwt / prometheus-client / httpx 已获用户同意）。共享文件改动：settings.py 加 jwt_*；test_migrations 合并时以 master 的一次性库版为准 | `cs_agent_p1` |
 
----
+合并顺序（用户 2026-09-05 拍板）：**等 V0 交付后**一并合——V0 → phase0-eval-foundation → main（tag `v0.1-phase0`）→ phase1-skeleton rebase 到 main。
+`uv.lock` 不手工合，合并后重跑 `uv sync`。
+
+### 2026-09-05 三方对齐结论
+
+- V0 session 此前因缺 `protocol.py` 停工，已 fetch 到 ba08ac8 并开工；计划 `agents/v0_naive.py` 的 `V0NaiveAgent`，client 注入式 mock。
+- `/v1/whoami` 保留并已补进 PRD §8.1（v1.1）。
+- 接口反馈处理：并发用线程已写进 protocol 文档；Usage 按模型拆分推到 Phase 6；`retrieved` 字段推到 Phase 2。
 
 ## 未决问题
 
 | # | 问题 | 等谁 |
 |---|---|---|
-| 1 | 向量化 provider：OpenAI `text-embedding-3-small` vs Voyage AI（多一个 key 与配额） | 用户，Phase 2 前 |
-| 2 | 单会话成本目标 $0.05 是否维持（基础价估算约 $0.21，需 caching + 调用数控制 + 压缩三者同时到位） | 用户 |
+| 1 | 向量化 provider：OpenAI `text-embedding-3-small` vs Voyage AI | 用户，Phase 2 前 |
 | 3 | ADR-0007 的 τ_low / τ_high 实测值 | Phase 2 标定后回填 |
 
 ### 已定（2026-09-05）
 
-- 性能目标（PRD §13.1）：认可
-- 主模型：**Claude Sonnet 5**（`claude-sonnet-5`），降级备用 Claude Haiku 4.5（`claude-haiku-4-5`）
-- 仓库可见性：已转 **public**
-
-## 环境备注
-
-- **本机的上一个 session 无法使用 `claude-fable-5-1`**（`/model claude-fable-5-1`
-  切换后未生效，实际仍以 Opus 5 运行）。因此在 2026-09-05 换到新 session 继续。
-  新 session 开工前先确认当前模型：若要用 Fable，用 `/model claude-fable-5`
-  （注意不带 `-1` 后缀）；不确定就直接用默认模型，不影响任何架构决策。
-
----
+- 单会话成本目标 **$0.05 维持**；Phase 6 前只记录不考核（原未决问题 2）
+- 主模型 Claude Sonnet 5（`claude-sonnet-5`），降级 Claude Haiku 4.5（`claude-haiku-4-5`）
+- Docker 运行时用 colima 而非 Docker Desktop（无需 sudo、无 GUI）
 
 ## 已知坑
 
-- `negativexq/agentic-customer-service-platform` 尚未验证是否存在，
-  PRD 中相关设计均为独立推导，不作为权威引用。
-- Phase 0–2 **不要多 session 并行**：接口与 schema 还在变，
-  隔离只会把冲突推迟到合并时。Phase 3+ 再用 `git worktree`。
-- checkpoint 恢复会**重放节点**。本版靠数据库唯一约束防重复副作用；
-  一旦接入真实外部服务，必须上 transactional outbox（PRD §17 第 1 条）。
+- **本机 3000 端口被用户另一个项目占用**（`~/Desktop/bingzhu's file/spam` 的 tsx watch 服务），
+  因此 Langfuse 宿主端口通过 `LANGFUSE_PORT` 参数化，本机用 3001。不要杀那个进程。
+- Homebrew 的 `docker-compose` 不会自动注册为 `docker compose` 子命令，需
+  `ln -sfn /opt/homebrew/opt/docker-compose/bin/docker-compose ~/.docker/cli-plugins/docker-compose`。
+- colima 默认 2 核 2G 跑不动 ClickHouse，必须显式给 `--cpu 4 --memory 6`。重启机器后需 `colima start`。
+- Langfuse v3 首次启动要跑 Postgres 与 ClickHouse 迁移，约 1–2 分钟内 API 不可用是正常的。
+- golden 中多个可接受结果的用例用 `decision_any_of` / `reason_code_any_of`，runner 必须支持；
+  SEC-010（两轮回复模板一致）与 IDEM-002（并发中恰好一次 replay）需要 runner 跨轮特判，notes 里有说明。
+- RAG-007/008 的低置信引用断言用 `citations_must_not_be_empty`，Phase 2 标定 τ 后再复核具体 id。
+- seed 每次全量清空 biz 7 表再重灌；biz 完全由 seed 拥有，不要手工往里插数据。
+- 迁移往返测试用一次性库 `cs_agent_test`（自动创建），**不要**在开发库上跑 downgrade，否则 eval_runs 历史丢失。
+- runner 的副作用判定只看探针快照（biz.refunds / tickets 计数），被测方自述的 reason_code 不作为写库证据。
+- 并发 confirm 的"代表结果"取 IDEMPOTENT_REPLAY 那一次；cost 估算按本轮用到的最贵模型计（Usage 不按模型拆分）。
+- `registry` 通过"模块内唯一的 AgentUnderTest 子类"发现 V0；若 session 2 放了多个类，需在模块里加 `AGENT = 类名`。
+- `negativexq/agentic-customer-service-platform` 尚未验证是否存在，PRD 相关设计为独立推导。
+- Phase 0–2 **不要多 session 并行**：接口与 schema 还在变。Phase 3+ 再用 `git worktree`。
+- checkpoint 恢复会**重放节点**。本版靠数据库唯一约束防重复副作用；接入真实外部服务后必须上 transactional outbox（PRD §17）。

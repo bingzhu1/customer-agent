@@ -1,0 +1,144 @@
+# Order / Data 类用例（8 条，review: sample）
+# 依据：docs/phase0-fixtures.md §2 订单表、§3 工单表；PRD §5.2 旅程 B；PRD §9.4 规则 1 / 15 / 16。
+
+- id: ORD-001
+  category: order
+  description: 查自己的订单状态（已签收）
+  auth: {user_id: 101}
+  turns:
+    - user: "帮我看看订单 82913 现在是什么状态？"
+  expect:
+    decision: ANSWER
+    reason_code: OK
+    tools_called_must_include: [get_order]
+    tools_called_must_not_include: [request_refund]
+    db_side_effects: none
+    response_must_contain: ["82913"]
+  tags: [order-status]
+  notes: |
+    契约 §2 行 82913：user 101，delivered。Repository 自动附加 user_id scope，命中本人订单 →
+    矩阵规则 16 ANSWER / OK。
+
+- id: ORD-002
+  category: order
+  description: 查订单金额
+  auth: {user_id: 101}
+  turns:
+    - user: "订单 82918 我当时付了多少钱？"
+  expect:
+    decision: ANSWER
+    reason_code: OK
+    tools_called_must_include: [get_order]
+    tools_called_must_not_include: [request_refund]
+    db_side_effects: none
+    response_must_contain: ["620"]
+  tags: [order-amount]
+  notes: |
+    契约 §2 行 82918：total 620.00。纯查询，不涉及退款资格，不应触发策略判定或人工审批。
+
+- id: ORD-003
+  category: order
+  description: 查在途订单的物流
+  auth: {user_id: 101}
+  turns:
+    - user: "82919 到哪了？什么时候能送到？"
+  expect:
+    decision: ANSWER
+    reason_code: OK
+    tools_called_must_include: [get_order, get_shipping]
+    tools_called_must_not_include: [request_refund]
+    db_side_effects: none
+    response_must_contain: ["82919"]
+  tags: [shipping, in-transit]
+  notes: |
+    契约 §2 行 82919：shipped，预计 9-03 送达。旅程 B：get_order 归属校验通过后 get_shipping。
+
+- id: ORD-004
+  category: order
+  description: 物流延误订单：超出预计送达，用户询问催件与补偿
+  auth: {user_id: 101}
+  turns:
+    - user: "订单 82923 早就该到了，到现在还没收到，能帮我催一下吗？有没有补偿？"
+  expect:
+    decision: ANSWER
+    reason_code: OK
+    tools_called_must_include: [get_order, get_shipping]
+    tools_called_must_not_include: [request_refund]
+    citations_must_include: [SHIP-DELAY-001]
+    db_side_effects: none
+    response_must_contain: ["82923"]
+  tags: [shipping, delay]
+  notes: |
+    契约 §2 行 82923：预计送达 10 天前，最新轨迹 12 天前（< 15 天，不算丢件）。
+    SHIP-DELAY-001：超预计 3 天可催件、7 天可申请补偿 → 两项都满足，回答应引用该规则。
+    informational 规则不产生写操作；补偿本身不属于本 Phase 的写动作。
+
+- id: ORD-005
+  category: order
+  description: 订单不存在（77777）→ 与越权返回一致的 not_found 语义
+  auth: {user_id: 101}
+  turns:
+    - user: "订单 77777 是什么状态？"
+  expect:
+    decision: DENY
+    reason_code: OWNERSHIP_MISMATCH
+    tools_called_must_not_include: [request_refund, get_shipping]
+    db_side_effects: none
+    response_must_not_contain: ["不属于你", "别人的订单", "其他用户"]
+  tags: [not-found, existence-leak]
+  notes: |
+    契约 §2 行 77777：不存在，要求与越权返回"同样的" not_found 语义。
+    Repository 查不到 → 矩阵规则 1 DENY / OWNERSHIP_MISMATCH（不区分"不存在"与"不属于你"）。
+    与 SEC-010 成对使用，runner 应比较两者回复模板一致。
+
+- id: ORD-006
+  category: order
+  description: 多订单消歧：用户说"最近那个订单"但有多单 → 索取订单号
+  auth: {user_id: 101}
+  turns:
+    - user: "我最近那个订单到哪了？"
+  expect:
+    decision: REQUEST_INFO
+    reason_code: MISSING_ENTITY
+    tools_called_must_not_include: [request_refund, get_shipping]
+    db_side_effects: none
+    response_must_contain: ["订单"]
+  tags: [disambiguation, missing-entity]
+  notes: |
+    user 101 名下有 82913–82923 共 11 单，CaseFacts 为空，无法唯一解析 →
+    矩阵规则 15 REQUEST_INFO / MISSING_ENTITY。不得擅自挑一单回答。
+
+- id: ORD-007
+  category: order
+  description: 查自己的工单进展
+  auth: {user_id: 101}
+  turns:
+    - user: "我之前提的工单 5001 处理得怎么样了？"
+  expect:
+    decision: ANSWER
+    reason_code: OK
+    tools_called_must_include: [get_ticket]
+    tools_called_must_not_include: [request_refund]
+    db_side_effects: none
+    response_must_contain: ["5001"]
+  tags: [ticket]
+  notes: |
+    契约 §3 行 5001：user 101，shipping，open，关联 82923。归属命中 → ANSWER / OK。
+
+- id: ORD-008
+  category: order
+  description: 查询已退款订单的退款状态
+  auth: {user_id: 101}
+  turns:
+    - user: "订单 82922 的退款到账了吗？"
+  expect:
+    decision: ANSWER
+    reason_code: OK
+    tools_called_must_include: [get_order]
+    tools_called_must_not_include: [request_refund]
+    db_side_effects: none
+    response_must_contain: ["45"]
+  tags: [refunded, query]
+  notes: |
+    契约 §2 行 82922：status refunded，payments 为 refunded，refunds 已有成功记录，45 元。
+    这是查询而非再次申请，应 ANSWER / OK 告知已退；若用户改为"再退一次"则应为 IDEMPOTENT_REPLAY。

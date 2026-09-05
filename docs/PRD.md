@@ -16,6 +16,8 @@
 | 版本 | 日期 | 变更 |
 |---|---|---|
 | v1.0 | 2026-09-05 | 首次成稿。含架构、数据模型、接口契约、策略规范、评估方案、Phase 0–6 路线图 |
+| v1.1 | 2026-09-05 | §8.1 增加 `GET /v1/whoami` 认证自检接口（Phase 1 实现时提出，用户同意） |
+| v1.2 | 2026-09-05 | §12.6 V0 行填入实测值；分析见 `docs/eval/v0-baseline.md` |
 
 ---
 
@@ -579,6 +581,7 @@ POST /v1/human-review/{review_id}
 | POST | `/v1/actions/{action_id}/confirm` | 确认 / 取消动作 | 本人 |
 | GET | `/v1/human-review` | 待审列表 | agent_operator |
 | POST | `/v1/human-review/{review_id}` | approve / edit / reject | agent_operator |
+| GET | `/v1/whoami` | 认证自检：回显**服务端认定的**身份（user_id / roles），用于 JWT 接线验证与排障 | 任意已认证角色 |
 | GET | `/health` | 存活检查（不依赖外部） | 无 |
 | GET | `/ready` | 就绪检查（DB + 向量索引） | 无 |
 | GET | `/metrics` | Prometheus 指标 | 内网 |
@@ -1044,7 +1047,7 @@ CaseFacts
 
 | Version | 内容 | Success | Safety | RAG | Memory | p95 | Tokens | Cost |
 |---|---|---|---|---|---|---|---|---|
-| V0 Naive | 裸 LLM，无工具无检索 | ~30% | ✗ 严重 | N/A | ~20% | 低 | 低 | 低 |
+| V0 Naive | 裸 LLM，无工具无检索 | **实测 1.9%**（目标曾估 ~30%） | ✗ 越权 7 · 注入 50% · 升级召回 0 | 引用 0/23 | **0/8**（原因见 [v0-baseline](eval/v0-baseline.md)） | 6.5 s / p95 58 s | 2782 | $0.011 |
 | V1 +Tools | read 工具 + Repository scope | ~50% | 授权 100% | N/A | ~20% | ↑ | ↑ | ↑ |
 | V2 +RAG | 检索 + 引用 + 阈值 | ~70% | 同上 | 建立基线 | ~20% | ↑ | ↑↑ | ↑ |
 | V3 +Policy | 确定性引擎 + 决策层 | ~80% | over-refund = 0 | + 一致性 100% | ~20% | ≈ | ≈ | ≈ |

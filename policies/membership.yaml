@@ -1,0 +1,54 @@
+# 会员域策略。结构与字段见 src/cs_agent/policy/schema.py；id/版本/要点以 docs/phase0-fixtures.md §5 为准。
+# 规则变更必须递增 version 并更新 effective_date，不允许原地修改旧版本。
+
+- id: MEMBER-GOLD-001
+  version: 1
+  effective_date: "2026-03-01"
+  domain: membership
+  applies_to:
+    item_category: standard
+    user_tier: gold
+  conditions:
+    days_since_delivery: {lte: 45}
+    item_condition: {in: [unused, unopened]}
+  effect: allow_refund
+  max_auto_amount: 200
+  requires_approval_above: 200
+  reason_code_on_pass: POLICY_SATISFIED
+  reason_code_on_fail: POLICY_VIOLATION_CONDITION
+  fail_reason_codes:
+    days_since_delivery: POLICY_VIOLATION_WINDOW
+    item_condition: POLICY_VIOLATION_CONDITION
+  anchor: "membership#gold-refund-window"
+  title: 金卡会员标准商品退款延长窗口
+  human_text: |
+    金卡会员购买的标准商品，退款窗口由普通会员的 30 天延长至自签收之日起 45 天内（含第 45 天），商品保持未使用或未拆封状态的，可申请全额退款。
+    超过 45 天，或商品已使用、已损坏的，不符合退款条件。
+    单笔退款金额不超过 200 元的，您确认后系统即可自动办理；超过 200 元的需转由人工审批后处理。
+    退款将原路退回至您的支付账户。
+  faq:
+    - q: 我是金卡会员，退款期限比普通用户长吗？
+      a: 是的。金卡会员购买的标准商品，退款窗口为签收后 45 天（含第 45 天），普通会员为 30 天。
+    - q: 金卡会员签收 50 天了还能退吗？
+      a: 不能。金卡会员的退款窗口为签收后 45 天以内，超过 45 天不符合退款条件。
+    - q: 金卡会员大额退款也要审批吗？
+      a: 要的。无论会员等级，单笔退款超过 200 元都需要人工审批；200 元以内确认后自动办理。
+
+- id: MEMBER-BENEFIT-001
+  version: 1
+  effective_date: "2026-03-01"
+  domain: membership
+  effect: informational
+  anchor: "membership#gold-benefits"
+  title: 金卡会员权益说明
+  human_text: |
+    金卡会员享有以下权益：一、标准商品退款窗口延长至签收后 45 天；二、所有订单免运费；三、消费积分按普通会员的 1.5 倍累计。
+    权益自会员等级生效之日起自动享有，无需额外申请。
+    积分与免运费权益以下单时的会员等级为准，退款窗口以签收时的会员等级为准。
+  faq:
+    - q: 金卡会员有什么好处？
+      a: 金卡会员享有三项权益：标准商品退款窗口延长至 45 天、全部订单免运费、积分按 1.5 倍累计。
+    - q: 金卡的权益需要手动领取吗？
+      a: 不需要。权益自会员等级生效之日起自动享有。
+    - q: 金卡积分怎么算？
+      a: 金卡会员的消费积分按普通会员的 1.5 倍累计，以下单时的会员等级为准。

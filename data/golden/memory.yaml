@@ -1,0 +1,253 @@
+# Memory 类用例（8 条，review: each）—— entity retention rate（PRD §12.4 ≥ 90%）
+# 结构固定：第 1–2 轮给出 order_id → 插入 8–12 轮与订单无关的闲聊 / 其他政策问题（不写 expect）
+# → 最后一轮用"那个订单"指代，顶层 expect 断言最后一轮正确解析到该订单。
+# 依据：PRD §5.3（order_id 从 CaseFacts 取）、§10 记忆不变式；docs/phase0-fixtures.md §2。
+# 中间轮次不得出现任何 5–6 位数字，避免污染实体解析。
+
+- id: MEM-001
+  category: memory
+  description: 第 2 轮给出 82913，插入 8 轮无关对话后问"那个订单怎么样了"（状态）
+  review: each
+  auth: {user_id: 101}
+  turns:
+    - user: "你好，在吗？"
+    - user: "我想问一下订单 82913 的情况。"
+    - user: "先不说这个。你们金卡会员有什么权益？"
+    - user: "怎么才能升级成金卡？"
+    - user: "你们的投诉一般多久有人回复？"
+    - user: "好的。对了你们保修多久？"
+    - user: "人为摔坏的保不保？"
+    - user: "明白了。今天天气真热。"
+    - user: "你们客服是 24 小时在线吗？"
+    - user: "行，谢谢你解释这么多。"
+    - user: "回到正题，我刚说的那个订单现在怎么样了？"
+  expect:
+    decision: ANSWER
+    reason_code: OK
+    tools_called_must_include: [get_order]
+    tools_called_must_not_include: [request_refund]
+    db_side_effects: none
+    response_must_contain: ["82913"]
+  tags: [entity-retention, status]
+  notes: |
+    契约 §2 行 82913：delivered，89 元。第 2 轮 order_id 由确定性代码写入 CaseFacts.order_ids，
+    中间 8 轮不得覆盖或丢失该实体；最后一轮"那个订单"应解析为 82913 并调用 get_order。
+    若最后一轮回复 REQUEST_INFO / MISSING_ENTITY，即为记忆丢失（V0 预期表现）。
+
+- id: MEM-002
+  category: memory
+  description: 第 1 轮给出 82914，插入 10 轮闲聊后问"那个订单多少钱"（金额）
+  review: each
+  auth: {user_id: 101}
+  turns:
+    - user: "订单 82914 帮我看一下。"
+    - user: "先等等，我还有别的想问。"
+    - user: "你们家的东西支持七天无理由吗？"
+    - user: "食品类能退吗？"
+    - user: "定制的东西呢？"
+    - user: "哦，那我以后买定制的要小心点。"
+    - user: "你们发货一般用什么快递？"
+    - user: "快递超时了可以催吗？"
+    - user: "多久没更新算丢件？"
+    - user: "好，记下了。"
+    - user: "对了，你们节假日也发货吗？"
+    - user: "那我一开始说的那个订单，总共多少钱？"
+  expect:
+    decision: ANSWER
+    reason_code: OK
+    tools_called_must_include: [get_order]
+    tools_called_must_not_include: [request_refund]
+    db_side_effects: none
+    response_must_contain: ["150"]
+  tags: [entity-retention, amount]
+  notes: |
+    契约 §2 行 82914：total 150.00。中间 10 轮涉及多条政策（食品 / 定制 / 物流），
+    这些政策问题会触发检索，但不得把 CaseFacts 中的 order_id 挤掉。回答金额 150 说明正确解析。
+
+- id: MEM-003
+  category: memory
+  description: 第 2 轮给出在途订单 82919，插入 9 轮无关对话后问"那个订单到哪了"（物流）
+  review: each
+  auth: {user_id: 101}
+  turns:
+    - user: "嗨，问个事。"
+    - user: "我有个订单 82919 还在路上。"
+    - user: "先不急，我想先了解一下别的。"
+    - user: "金卡会员是不是免运费？"
+    - user: "积分怎么算的？"
+    - user: "你们有实体店吗？"
+    - user: "保修期内坏了要自己寄回去吗？"
+    - user: "投诉多久能结案？"
+    - user: "好的好的。"
+    - user: "你们支持货到付款吗？"
+    - user: "行，那就这样。"
+    - user: "那个在路上的订单现在到哪了？"
+  expect:
+    decision: ANSWER
+    reason_code: OK
+    tools_called_must_include: [get_order, get_shipping]
+    tools_called_must_not_include: [request_refund]
+    db_side_effects: none
+    response_must_contain: ["82919"]
+  tags: [entity-retention, shipping]
+  notes: |
+    契约 §2 行 82919：shipped，预计 9-03 送达。"那个在路上的订单"应解析为 82919，
+    并按旅程 B 先 get_order 校验归属再 get_shipping。回复中带订单号说明解析正确。
+
+- id: MEM-004
+  category: memory
+  description: 第 1 轮给出 82913，插入 9 轮无关对话后问"那个订单能退吗"（退款资格 → 允许）
+  review: each
+  auth: {user_id: 101}
+  turns:
+    - user: "订单 82913 我收到了，先放着。"
+    - user: "我想先问问退款政策。"
+    - user: "退款是多少天内？"
+    - user: "要是拆封了还能退吗？"
+    - user: "退款一般几天到账？"
+    - user: "你们的客服电话是多少？"
+    - user: "算了不打电话了。"
+    - user: "对了金卡退款窗口是不是更长？"
+    - user: "怎么开通金卡？"
+    - user: "好，我考虑一下。"
+    - user: "那我一开始说的那个订单，我不想要了，能退吗？没用过。"
+  expect:
+    decision: REQUIRE_CONFIRMATION
+    reason_code: POLICY_SATISFIED
+    tools_called_must_include: [get_order]
+    tools_called_must_not_include: [request_refund]
+    citations_must_include: [REFUND-STD-001]
+    db_side_effects: none
+    response_must_contain: ["89"]
+  tags: [entity-retention, refund-eligibility]
+  notes: |
+    契约 §2 行 82913：12 天 / unused / 89 → REFUND-STD-001 通过 → 矩阵规则 12（同 POL-001）。
+    与 POL-001 的区别在于 order_id 来自 CaseFacts 而非当前轮文本（PRD §5.3 旅程 C）。
+    中间轮次多次讨论退款政策，不得把政策问答中的"30 天"等数字误当实体。
+
+- id: MEM-005
+  category: memory
+  description: 第 2 轮给出食品订单 82916，插入 8 轮无关对话后问"那个订单能退吗"（退款资格 → 拒绝）
+  review: each
+  auth: {user_id: 101}
+  turns:
+    - user: "在吗，想咨询一下。"
+    - user: "我昨天收到了订单 82916，是一箱零食。"
+    - user: "先问点别的。你们电子产品保修多久？"
+    - user: "保修要发票吗？"
+    - user: "好。快递到了没人签收会怎么处理？"
+    - user: "会放快递柜吗？"
+    - user: "明白。你们平台有会员日吗？"
+    - user: "金卡积分是几倍？"
+    - user: "行，谢谢。"
+    - user: "对了，你们有 app 吗？"
+    - user: "那个零食订单我不想要了，没拆，能退吗？"
+  expect:
+    decision: DENY
+    reason_code: POLICY_VIOLATION_CATEGORY
+    tools_called_must_include: [get_order]
+    tools_called_must_not_include: [request_refund]
+    citations_must_include: [REFUND-FOOD-001]
+    db_side_effects: none
+    response_must_contain: ["82916"]
+  tags: [entity-retention, refund-eligibility, food]
+  notes: |
+    契约 §2 行 82916：food/unopened → REFUND-FOOD-001 deny → 矩阵规则 8 POLICY_VIOLATION_CATEGORY（同 POL-004）。
+    "那个零食订单"需同时依赖 CaseFacts 的 order_id 与叙述摘要中的"零食"语义。
+    记忆只能帮助解析实体，不得影响资格判定（红线 3）：类别必须从 biz 重新查得。
+
+- id: MEM-006
+  category: memory
+  description: 第 1–2 轮反馈 82923 迟迟未到并要求催件，插入 9 轮无关对话后追问"之前说催的那个订单到哪了"（承诺事项）
+  review: each
+  auth: {user_id: 101}
+  turns:
+    - user: "我订单 82923 到现在还没收到。"
+    - user: "帮我催一下快递吧。"
+    - user: "好的，等你消息。顺便问一下别的。"
+    - user: "你们退换货运费谁承担？"
+    - user: "金卡有什么额外好处？"
+    - user: "保修期多长？"
+    - user: "投诉一般多久有人处理？"
+    - user: "行。你们有线下门店可以自提吗？"
+    - user: "那有没有电子发票？"
+    - user: "好吧。"
+    - user: "你们家的东西是正品吗？"
+    - user: "对了，你之前说帮我催的那个订单，物流现在到哪了？"
+  expect:
+    decision: ANSWER
+    reason_code: OK
+    tools_called_must_include: [get_order, get_shipping]
+    tools_called_must_not_include: [request_refund]
+    db_side_effects: none
+    response_must_contain: ["82923"]
+  tags: [entity-retention, shipping, commitment]
+  notes: |
+    契约 §2 行 82923：预计送达 10 天前、最新轨迹 12 天前，SHIP-DELAY-001 适用；工单 5001 也关联此单。
+    "之前说帮我催的那个订单"考验叙述摘要对"承诺事项"（催件）的保留与 CaseFacts 中 order_id 的绑定。
+    ANSWER / OK 为矩阵规则 16；若实现引用 SHIP-DELAY-001 亦可接受。
+
+- id: MEM-007
+  category: memory
+  description: 第 1–2 轮投诉 82920 颜色不符（已使用），插入 9 轮无关对话后问"我投诉的那个订单退了吧"（投诉点 → 拒绝）
+  review: each
+  auth: {user_id: 101}
+  turns:
+    - user: "订单 82920 收到了，颜色跟图片差太多。"
+    - user: "我已经用了两天了才发现，挺失望的。"
+    - user: "先不说这个，问点别的。"
+    - user: "你们有换货服务吗？"
+    - user: "金卡会员怎么申请？"
+    - user: "保修不包括哪些情况？"
+    - user: "包裹丢了怎么办？"
+    - user: "投诉多久能结案？"
+    - user: "好的。"
+    - user: "你们有优惠券吗？"
+    - user: "行，知道了。"
+    - user: "回到我一开始投诉颜色的那个订单，我不想要了，直接给我退了吧。"
+  expect:
+    decision: DENY
+    reason_code: POLICY_VIOLATION_CONDITION
+    tools_called_must_include: [get_order]
+    tools_called_must_not_include: [request_refund]
+    citations_must_include: [REFUND-STD-001]
+    db_side_effects: none
+    response_must_contain: ["82920"]
+  tags: [entity-retention, complaint, refund-eligibility, condition]
+  notes: |
+    契约 §2 行 82920：standard/used，8 天前，99 元。REFUND-STD-001 的 item_condition 失败 →
+    POLICY_VIOLATION_CONDITION（矩阵规则 8）。"一开始投诉颜色的那个订单"依赖叙述摘要保留投诉点。
+    condition=used 必须来自 biz.order_items，用户第 2 轮"用了两天"只是叙述，不是判定输入（红线 3）。
+    第 2 轮语气为失望而非强负面，不应触发 HIGH_NEGATIVE_SENTIMENT。
+
+- id: MEM-008
+  category: memory
+  description: 第 2 轮给出高额订单 82918，插入 10 轮无关对话后问"那个订单退了要多久，能退吗"（金额 → 主管审批）
+  review: each
+  auth: {user_id: 101}
+  turns:
+    - user: "你好。"
+    - user: "我有个订单 82918，先记一下。"
+    - user: "先问几个别的问题。"
+    - user: "你们运费怎么算？"
+    - user: "满多少免运费？"
+    - user: "金卡是不是全免？"
+    - user: "保修 12 个月是从签收开始算吗？"
+    - user: "人为损坏保不保？"
+    - user: "投诉了多久会有人联系我？"
+    - user: "好，明白。"
+    - user: "你们是自营还是第三方商家？"
+    - user: "行吧。"
+    - user: "那我刚开始记的那个订单，我想全额退款，没用过，能退吗？"
+  expect:
+    decision: REQUIRE_HUMAN
+    reason_code: AMOUNT_ABOVE_AUTO_LIMIT
+    tools_called_must_include: [get_order]
+    tools_called_must_not_include: [request_refund]
+    citations_must_include: [REFUND-STD-001]
+    db_side_effects: none
+    response_must_contain: ["620"]
+  tags: [entity-retention, refund-eligibility, amount-limit]
+  notes: |
+    契约 §2 行 82918：5 天 / unused / 620 → REFUND-STD-001 ALLOW 但 620 > 200 → 矩阵规则 10（同 ESC-003）。
+    中间轮次出现"12 个月"等数字，不得被误解析为订单号或金额。回复带 620 说明解析到了正确订单。

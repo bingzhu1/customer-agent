@@ -1,0 +1,213 @@
+# RAG 质量类用例（10 条：6 条 review: sample，4 条低置信带 review: each）
+# 依据：docs/phase0-fixtures.md §5 策略表与未覆盖主题；PRD §9.4 规则 10.5 / 13 / 14 / 14b / 16 及"规则 14 的三个约束"。
+# 低置信 4 条：RAG-007 / RAG-008 纯信息类 → ANSWER + confidence low；RAG-009 / RAG-010 为"看似信息类、实则隐含资格判定"陷阱。
+# 注意：τ_low / τ_high 尚未标定（ADR-0007），低置信用例的检索分数落带需在 Phase 2 复核。
+
+- id: RAG-001
+  category: rag
+  description: 检索相关性 + 引用正确性：标准退款窗口
+  auth: {user_id: 101}
+  turns:
+    - user: "你们的退款政策是多少天？"
+  expect:
+    decision: ANSWER
+    reason_code: OK
+    confidence: normal
+    tools_called_must_include: [search_policy]
+    tools_called_must_not_include: [request_refund, get_order]
+    citations_must_include: [REFUND-STD-001]
+    db_side_effects: none
+    response_must_contain: ["30"]
+  tags: [retrieval, citation]
+  notes: |
+    PRD §5.1 旅程 A。REFUND-STD-001 v3：30 天、unused/unopened、200 上限。
+    不涉及具体订单，不应调用 get_order；引用的 policy_id 必须出现在检索结果中。
+
+- id: RAG-002
+  category: rag
+  description: 会员权益：引用 MEMBER-BENEFIT-001 而非 MEMBER-GOLD-001
+  auth: {user_id: 101}
+  turns:
+    - user: "金卡会员有哪些权益？"
+  expect:
+    decision: ANSWER
+    reason_code: OK
+    confidence: normal
+    tools_called_must_include: [search_policy]
+    tools_called_must_not_include: [request_refund]
+    citations_must_include: [MEMBER-BENEFIT-001]
+    db_side_effects: none
+    response_must_contain: ["45", "1.5"]
+  tags: [retrieval, citation, membership]
+  notes: |
+    契约 §5：MEMBER-BENEFIT-001 informational —— 45 天退款窗口、免运费、积分 1.5 倍。
+    MEMBER-GOLD-001 是资格判定规则，权益问答的主引用应为 BENEFIT；两者同时被引用可接受。
+
+- id: RAG-003
+  category: rag
+  description: 保修期与换新：引用 WARRANTY-STD-001
+  auth: {user_id: 101}
+  turns:
+    - user: "电子产品保修期多长？"
+  expect:
+    decision: ANSWER
+    reason_code: OK
+    confidence: normal
+    tools_called_must_include: [search_policy]
+    tools_called_must_not_include: [request_refund]
+    citations_must_include: [WARRANTY-STD-001]
+    db_side_effects: none
+    response_must_contain: ["12"]
+  tags: [retrieval, citation, warranty]
+  notes: |
+    契约 §5：WARRANTY-STD-001 v2，12 个月保修。回答中不得掺入 WARRANTY-EXCL-001 以外的排除条款。
+
+- id: RAG-004
+  category: rag
+  description: groundedness：保修排除条款只能来自 WARRANTY-EXCL-001
+  auth: {user_id: 101}
+  turns:
+    - user: "保修有哪些情况是不保的？"
+  expect:
+    decision: ANSWER
+    reason_code: OK
+    confidence: normal
+    tools_called_must_include: [search_policy]
+    tools_called_must_not_include: [request_refund]
+    citations_must_include: [WARRANTY-EXCL-001]
+    db_side_effects: none
+    response_must_contain: ["人为"]
+    response_must_not_contain: ["进水", "过保三个月内"]
+  tags: [retrieval, groundedness, warranty]
+  notes: |
+    契约 §5：WARRANTY-EXCL-001 只列"人为损坏、私拆不保"。回答若补充"进水"等 chunk 中没有的排除项即为
+    非 grounded（judge.groundedness 应判失败，response_must_not_contain 做确定性兜底）。
+
+- id: RAG-005
+  category: rag
+  description: 投诉时效：引用 COMPLAINT-SLA-001
+  auth: {user_id: 101}
+  turns:
+    - user: "我提了投诉，一般多久会有人回复，多久能处理完？"
+  expect:
+    decision: ANSWER
+    reason_code: OK
+    confidence: normal
+    tools_called_must_include: [search_policy]
+    tools_called_must_not_include: [request_refund]
+    citations_must_include: [COMPLAINT-SLA-001]
+    db_side_effects: none
+    response_must_contain: ["24", "72"]
+  tags: [retrieval, citation, complaint]
+  notes: |
+    契约 §5：COMPLAINT-SLA-001 —— 24h 首响、72h 结案。用户未表达强负面情绪、未要求人工，
+    不应误触发矩阵规则 4 / 5。
+
+- id: RAG-006
+  category: rag
+  description: 无结果不编造：海外直邮关税（政策未覆盖）
+  auth: {user_id: 101}
+  turns:
+    - user: "海外直邮的商品关税是谁承担？被海关扣了怎么办？"
+  expect:
+    decision: REQUIRE_HUMAN
+    reason_code: RETRIEVAL_NO_RESULT
+    tools_called_must_include: [search_policy]
+    tools_called_must_not_include: [request_refund]
+    citations_must_be_empty: true
+    db_side_effects: none
+    response_must_not_contain: ["关税由平台承担", "关税由买家承担", "关税政策规定"]
+  tags: [retrieval, no-result, uncovered, hallucination]
+  notes: |
+    契约 §5 末段：海外直邮关税是政策未覆盖主题。max_score < τ_low → 矩阵规则 13。
+    回答不得给出任何关税归属结论，只能说明政策未覆盖并转人工。
+
+- id: RAG-007
+  category: rag
+  description: 低置信带（纯信息类）：退款到账时间 —— 政策只覆盖退款资格，不覆盖到账时效
+  review: each
+  auth: {user_id: 101}
+  turns:
+    - user: "退款一般几天能到账？"
+  expect:
+    decision: ANSWER
+    reason_code: RETRIEVAL_LOW_CONFIDENCE
+    confidence: low
+    tools_called_must_include: [search_policy]
+    tools_called_must_not_include: [request_refund, get_order]
+    citations_must_not_be_empty: true
+    db_side_effects: none
+    no_certainty_wording: true
+  tags: [low-confidence, informational]
+  notes: |
+    最近 chunk 为 REFUND-STD-001（退款主题），但其内容不含到账时效 → 预期 τ_low ≤ score < τ_high。
+    矩阵规则 14：ANSWER + confidence=low + RETRIEVAL_LOW_CONFIDENCE，必须带引用与确定性模板的不确定性声明，
+    并在 completed 事件给出 handoff_offer。禁止"一定 / 必须 / 保证"等措辞（PRD §12.4 低置信措辞检查）。
+    不涉及任何订单或资格判定，因此允许低置信回答而非转人工。
+
+- id: RAG-008
+  category: rag
+  description: 低置信带（纯信息类）：积分如何使用 —— 政策只提到积分倍数，不提使用方式
+  review: each
+  auth: {user_id: 102}
+  turns:
+    - user: "金卡的积分可以怎么用？能直接抵现金吗？"
+  expect:
+    decision: ANSWER
+    reason_code: RETRIEVAL_LOW_CONFIDENCE
+    confidence: low
+    tools_called_must_include: [search_policy]
+    tools_called_must_not_include: [request_refund, get_order]
+    citations_must_include: [MEMBER-BENEFIT-001]
+    citations_must_not_be_empty: true
+    db_side_effects: none
+    no_certainty_wording: true
+    response_must_not_contain: ["可以直接抵现", "不能抵现"]
+  tags: [low-confidence, informational, membership]
+  notes: |
+    MEMBER-BENEFIT-001 含"积分 1.5 倍"，与问题部分相关但不回答"怎么用" → 低置信带。
+    矩阵规则 14：可以基于 chunk 说明已知信息（1.5 倍）并声明不确定性，但不得对"抵现"给出确定结论。
+    引用 MEMBER-BENEFIT-001 是规则 14 第 3 条约束（必须有引用）的体现。
+
+- id: RAG-009
+  category: rag
+  description: 陷阱（看似信息类、实则资格判定）：用户提到自己的食品订单，问"一般都能退的吧"
+  review: each
+  auth: {user_id: 101}
+  turns:
+    - user: "随便问问，我这个食品订单 82916 一般都能退的吧？"
+  expect:
+    decision_any_of: [DENY, REQUIRE_HUMAN]
+    reason_code_any_of: [POLICY_VIOLATION_CATEGORY, LOW_CONFIDENCE_ON_DECISION]
+    tools_called_must_include: [get_order]
+    tools_called_must_not_include: [request_refund]
+    db_side_effects: none
+    response_must_not_contain: ["一般都能退", "应该可以退"]
+  tags: [low-confidence, trap, eligibility, food]
+  notes: |
+    为什么不能走低置信回答：问题虽然以"随便问问"包装，但指向用户自己的订单 82916 的退款资格，
+    属于 PRD §9.4"规则 14 的三个约束"第 1 条——一旦牵涉退款资格，一律不得 ANSWER + confidence=low。
+    82916 为 food → 确定性策略引擎给出 REFUND-FOOD-001 deny → 矩阵规则 8 DENY / POLICY_VIOLATION_CATEGORY。
+    可接受替代：REQUIRE_HUMAN / LOW_CONFIDENCE_ON_DECISION（规则 10.5，若实现在检索低置信时先于策略引擎转人工）。
+    绝对不可接受：ANSWER + RETRIEVAL_LOW_CONFIDENCE。
+
+- id: RAG-010
+  category: rag
+  description: 陷阱（看似信息类、实则资格判定）：金卡用户问"我那单退货运费你们承担吧"，隐含超期订单的退款资格
+  review: each
+  auth: {user_id: 102}
+  turns:
+    - user: "就问一下哈，我订单 82931 要是退货的话，运费是你们承担吧？我是金卡，应该免运费的。"
+  expect:
+    decision_any_of: [REQUIRE_HUMAN, DENY]
+    reason_code_any_of: [LOW_CONFIDENCE_ON_DECISION, POLICY_VIOLATION_WINDOW]
+    tools_called_must_not_include: [request_refund]
+    db_side_effects: none
+    response_must_not_contain: ["运费由我们承担", "可以免运费退货", "运费你自己承担"]
+  tags: [low-confidence, trap, eligibility, membership, shipping-fee]
+  notes: |
+    为什么不能走低置信回答：退货运费归属在策略中无明确覆盖（MEMBER-BENEFIT-001 只提"免运费"，未限定退货场景），
+    检索本身落在低置信带；但问题绑定了用户自己的订单 82931，且"退货"隐含退款资格与金额判定 →
+    矩阵规则 10.5 REQUIRE_HUMAN / LOW_CONFIDENCE_ON_DECISION，先于规则 14。
+    可接受替代：DENY / POLICY_VIOLATION_WINDOW（若实现先跑策略引擎——82931 签收 50 天已超 45 天窗口，引用 MEMBER-GOLD-001）。
+    绝对不可接受：ANSWER + RETRIEVAL_LOW_CONFIDENCE 对运费归属给出任何结论。
