@@ -37,3 +37,4 @@
 | 2026-09-05 | 冲刺 | 前端四段合入（登录 / 对话 / 六种 decision / 确认按钮 / 调试抽屉 / 历史，mock 优先，npm test 11、lint、build 全过，FE session 交付）；Phase 1 ② 四个聊天接口合入；Phase 4 内核任务下发 P3；PRD v1.4 矩阵加规则 6b | `4c3e547` | test 564/564 |
 | 2026-09-05 | 跨 Phase | 前端评估：现有前端够用、不重构；assistant-ui 仅参考、shadcn 不引入。发现会话侧栏无后端接口，PRD v1.5 加 `GET /v1/threads`（FR-109），PLAN Phase 4 M7 加依赖 | 见 git log | 文档改动 |
 | 2026-09-05 | 冲刺 | 合入 Phase 1 前端对接（CORS / pending_action / dev token）、Phase 2 查询改写与 ADR-0007 τ 标定、前端契约对齐；主目录 8000 起 main 版后端供前端联调（误停 P1 的 8123 服务，已告知）；策略 chunk 入库 44 行 | `f77e5ba` | test 591/591（全量耗时升至 2 分钟，待查） |
+| 2026-09-05 | 冲刺 | 合入 Phase 4 内核（P3：幂等键 / 状态机 / ActionService / RefundService / 审计，矩阵规则 6b）；前端联调三条全过并合入冒烟测试；HANDOFF 分工表补 Phase 4 / 记忆 / 前端三行 | （待填） | test 730/730 |

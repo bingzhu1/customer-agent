@@ -111,9 +111,9 @@ prompt caching、记忆压缩与三方对比、人工控制台、混沌测试。
 
 ## Phase 4 — 写路径：提议 → 确认 → 执行 · 内核先行 · 负责 P3（内核：actions/ services/）+ P1（interrupt / resume / confirm API）
 
-- [~] M1 `ActionProposal` + 幂等键 + 状态机 + ActionService（FR-501~505）—— P3，2026-09-05 开工，分支仍用 `phase3-policy-engine`
-- [ ] M2 interrupt / resume（FR-601/602）+ `POST /v1/actions/{id}/confirm`
-- [~] M3 `RefundService(SIMULATED)`（FR-506）+ `audit_log` 追加式（FR-507）+ 重试幂等（FR-508）—— P3，与 M1 一起
+- [x] M1 `ActionProposal` + 幂等键 + 状态机 + ActionService（FR-501~505）—— P3 · `868d34b`，已合 main `d4736fd`（46 测试：并发只执行一次、过期拒绝、他人 NotFound、审计逐步 +1）
+- [ ] M2 interrupt / resume（FR-601/602）+ `POST /v1/actions/{id}/confirm` —— P1，在第二轮 ⑤ 之后接 ActionService；前端确认按钮据此点亮
+- [x] M3 `RefundService(SIMULATED)`（FR-506）+ `audit_log` 追加式（FR-507）+ 重试幂等（FR-508）—— P3 · `868d34b`
 - [ ] M4 `escalate_to_human` 创建 human_review 并中断（FR-206）；`create_ticket`（FR-205，P1）
 - [ ] M5 SSE 事件协议 v1（FR-103，§8.3）
   > 备注（2026-09-05）：事件命名与 payload 可参考 embedease-ai `backend/app/schemas/events.py`——按命名空间分层（`meta.start` / `tool.start` / `tool.end` / `assistant.final` / `model.fallback`），每个事件配 TypedDict payload；前端消费侧参考其 `frontend/packages/chat-sdk/src/timeline/reducer.ts`（纯 reducer 把事件流折成时间线，可脱离浏览器测试）。我方 §8.3 的 `requires_confirmation` / `requires_human` 是终结事件，这一点保留。同样只借鉴设计。

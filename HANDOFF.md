@@ -48,7 +48,9 @@
 |---|---|---|---|
 | master（本 session） | `phase0-eval-foundation` / 主目录 | `src/cs_agent/eval/**`（protocol 除外，改动需声明）、`tests/test_eval_*`、Makefile 的 eval target、`eval_reports/`、PROGRESS / HANDOFF | `cs_agent` |
 | session 2：V0 baseline | `phase0-v0-baseline` / `../ca-v0` | **已交付并合入**，session 可关闭 | — |
-| session 4：Phase 3 | `phase3-policy-engine` / `../ca-phase3` | `policy/facts.py`、`policy/engine.py`、`decision/**`、对应 tests（纯函数，无 IO / LLM）；只读 `policy/schema.py` | `cs_agent_p3` |
+| session 4：Phase 3 → Phase 4 内核 | `phase3-policy-engine` / `../ca-phase3` | `policy/facts.py`、`policy/engine.py`、`decision/**`、`actions/**`、`services/refund.py`、对应 tests | `cs_agent_p3` |
+| session 5：Phase 2 → Phase 5 记忆 | `phase2-rag` / `../ca-phase2` | `rag/**`（`rag/provider.py` 若为 P1 新建则归 P1，待确认）、`memory/**`、`scripts/calibrate_tau.py`、`docs/adr/0007` | `cs_agent_p2` |
+| session 6：前端 | `frontend-chat` / `../ca-frontend` | `frontend/**` | 无 |
 | session 3：Phase 1 | `phase1-skeleton` / `../ca-phase1` | Phase 1 全部范围（用户已在该 session 内验收 2 个 milestone：0002 迁移 + AuthContext + Repository；FastAPI / JWT / 可观测性，新依赖 fastapi / uvicorn / pyjwt / prometheus-client / httpx 已获用户同意）。共享文件改动：settings.py 加 jwt_*；test_migrations 合并时以 master 的一次性库版为准 | `cs_agent_p1` |
 | FE（前端） | `frontend-chat` / `../ca-frontend` | `frontend/**`、`.gitignore` 的 frontend 两行、本表这一行 | 无数据库（对 mock，后接真实 API） |
 
