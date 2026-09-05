@@ -18,3 +18,4 @@
 | 2026-09-05 | Phase 0 | milestone 3：eval runner —— 断言引擎、副作用探针（查库不信自述）、跨轮特判（幂等恰好一次 / 存在性模板一致）、§12.4 指标、markdown+JSON 报表、eval_runs 落库、LLM judge（可选）、哑 agent、`make eval` | `8cc6365` | test 117/117、lint + mypy 通过；`make eval AGENT=dummy` 1/54、硬门槛 FAIL（预期） |
 | 2026-09-05 | Phase 0 | 修复：迁移往返测试改用一次性库 `cs_agent_test`，不再清空开发库的 eval_runs 与 seed；alembic env 支持 Config 覆盖连接串 | `c506733` | test 117/117；开发库 eval_runs 保留 |
 | 2026-09-05 | Phase 0 | 三 session 进度对齐（master 迁到终端后可直接互发消息）；用户拍板：等 V0 交付后一并合入；`/v1/whoami` 进 PRD §8.1（v1.1）；protocol 文档补并发约定与两项待补字段 | `f1f5390` | — |
+| 2026-09-05 | Phase 1 | milestone 1：迁移 0002 建 PRD §7.3 其余 10 张 agent 表（向量列 Text 占位，Phase 2 换 pgvector），`agent_actions` 上 UNIQUE(idempotency_key)、`policy_chunks` 上版本唯一键；`AuthContext(user_id, roles)` 与 `BizRepository`（get_order / get_shipping / get_ticket 强制 `WHERE user_id = ctx.user_id`）；授权与迁移往返测试。独立库 `cs_agent_p1` | `PENDING` | test 113/113、lint + mypy strict 通过 |
