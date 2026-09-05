@@ -43,3 +43,4 @@
 | 2026-09-05 | 冲刺 | 合入 Phase 1 ③（真 RAG 接线）与 ⑤（记忆接线 + v5 agent + conftest 测试隔离）、Phase 3 审批内核、Phase 2 压缩 / 异步抽取 / 演示脚本、前端改版；真 openai provider 下 V3：26/54，硬门槛全绿，policy 61%，一致性 12/12，escalation recall 73%（τ 0.48/0.50）；8000 重启为最新 main | `e7e06c1` | test 811/811 |
 | 2026-09-05 | Phase 1 | persist 节点接 P2 的 `memory.jobs.ExtractionQueue`：投递即返回，抽取与写库在后台线程（不变式 4 长期记忆异步写入、FR-704 不在热路径）；API 用异步队列并在 lifespan 回收，eval / 单测用 InlineExtractionQueue 换确定性 | `e9a8d79` | test 816/816、lint 通过；新增用例断言 persist 不等抽取（慢抽取器 1s，本轮 < 0.5s） |
 | 2026-09-05 | 冲刺 | 合入 Phase 1 `e9a8d79`：persist 节点接 ExtractionQueue，长期记忆改异步写入（合并 commit `e1f1498` 的说明误写为"④ 三个工具"，以本行为准；④ 尚未交付） | `3d1fc98` | test 812/812 |
+| 2026-09-05 | Phase 4 M7 | 前端拆成两个界面：`#/chat` 客户界面（客服 Tracy 人设、无后台字段、人话确认卡）与 `#/admin` 工作台（原三栏）；会话状态提到 App 层共用；登录页加入口选择 | 见 git log（frontend-chat） | tsc / lint / vitest 17 / build 通过；浏览器人工验证客户界面无后台字段、工作台看到同一会话判定 |

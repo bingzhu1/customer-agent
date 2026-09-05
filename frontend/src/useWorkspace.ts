@@ -14,6 +14,8 @@ import { historyToItems } from './timeline/history'
 import type { TimelineEvent } from './timeline/reducer'
 import { emptyWorkspace, workspaceReducer } from './timeline/workspace'
 
+export type Workspace = ReturnType<typeof useWorkspace>
+
 export function useWorkspace(client: ApiClient, onLogout: () => void) {
   const [state, dispatch] = useReducer(workspaceReducer, emptyWorkspace)
   const [creating, setCreating] = useState(false)

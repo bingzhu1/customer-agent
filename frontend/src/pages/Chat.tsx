@@ -1,6 +1,6 @@
 /**
- * 对话页布局：左侧会话侧栏 · 中间对话流 · 右侧本轮判定。
- * 所有状态与副作用在 useWorkspace，这里只排版。
+ * 客服工作台（#/admin）：左侧会话侧栏 · 中间对话流 · 右侧本轮判定。
+ * 会话状态由 App 层的 useWorkspace 提供（与客户界面共用），这里只排版。
  */
 
 import { useEffect, useRef, useState } from 'react'
@@ -17,18 +17,18 @@ import { isWaiting, latestPendingAction } from '../timeline/reducer'
 import UserMessageItem from '../timeline/UserMessageItem'
 import WaitingItem from '../timeline/WaitingItem'
 import { activeThread, latestResult, threadSummaries, threadTitle } from '../timeline/workspace'
-import { useWorkspace } from '../useWorkspace'
+import type { Workspace } from '../useWorkspace'
 
 interface Props {
   client: ApiClient
   identity: WhoAmI
+  ws: Workspace
   onLogout: () => void
 }
 
 const SUGGESTIONS = ['我要退款', '查一下我的订单', '620 元那笔怎么退', '物流到哪了', '99999 是别人的订单']
 
-export default function Chat({ client, identity, onLogout }: Props) {
-  const ws = useWorkspace(client, onLogout)
+export default function Chat({ client, identity, ws, onLogout }: Props) {
   const [draft, setDraft] = useState('')
   const [panelOpen, setPanelOpen] = useState(true)
   const endRef = useRef<HTMLDivElement>(null)
@@ -80,6 +80,9 @@ export default function Chat({ client, identity, onLogout }: Props) {
             <button className={`icon-btn${panelOpen ? ' on' : ''}`} onClick={() => setPanelOpen((open) => !open)} aria-label="判定面板" title="判定面板">
               <Icon name="panel" size={16} />
             </button>
+            <a className="icon-btn" href="#/chat" aria-label="客户视图" title="客户视图">
+              <Icon name="chat" size={16} />
+            </a>
             <a className="icon-btn" href="#/review" aria-label="审批页" title="审批页">
               <Icon name="user" size={16} />
             </a>
