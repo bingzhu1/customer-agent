@@ -8,6 +8,25 @@
 
 ---
 
+## ⚡ 3 小时冲刺（2026-09-05 晚，用户拍板）：V1 + V3 核心闭环
+
+目标：用最短路径证明核心命题"LLM 提议、确定性代码判定"。产出 V0 → V1 → V3 三行演进表，
+authorization violation 7 → 0，越权 / 超期 / 食品 / 定制退款被确定性拒绝并引用正确策略。
+
+| 时段 | Phase 1（P1） | Phase 3（P3） | master |
+|---|---|---|---|
+| 0–60 分 | [ ] rebase main；LangGraph 最小图（ingest→understand→act→decide→respond），checkpointer 用 MemorySaver；4 个只读工具接 Repository | [x] 引擎 + 矩阵已交付 `e2a5927` → [ ] rebase main；[ ] 受约束的拒绝 / 升级话术模板 `decision/templates.py` | [x] 合 main、tag；[ ] 审 P3 接口定稿；[ ] PLAN 改冲刺版 |
+| 60–120 分 | [ ] `agents/v1_tools.py` 实现 `AgentUnderTest`，`make eval AGENT=v1` | [ ] 交付模板；待命修 bug | [ ] 合 P3 到 main；[ ] 跑 V1 eval，把授权用例修到 0 违规 |
+| 120–180 分 | [ ] `policy_gate` / `decide` 节点接 P3 的 `evaluate` / `decide`，`agents/v3_policy.py`，`make eval AGENT=v3` | [ ] 待命 | [ ] 跑 V3 eval；[ ] README 写 V0→V3 演进表；[ ] 合 P1 到 main，tag `v0.4-sprint` |
+
+**冲刺期间明确推后**（不删，回到各 Phase 的正常节奏再做）：RAG 与向量检索（`search_policy` 用策略 `human_text` 关键词匹配代替，标注"非真 RAG"）、
+写路径与幂等（停在 REQUIRE_CONFIRMATION，不执行）、Postgres checkpointer、SSE、Langfuse、限流 / 超时中间件、
+prompt caching、记忆压缩与三方对比、人工控制台、混沌测试。
+
+**冲刺不放松的**：三条红线；安全类指标仍是硬门槛；每次合并前 `make test && make lint`；不改测试来让测试过。
+
+---
+
 ## Phase 0 — 评估先行的地基 · 分支 `phase0-eval-foundation` · PR #1
 
 - [x] M1 环境与骨架：uv / colima / docker-compose(pg+pgvector+Langfuse) / Makefile / Settings —— master · 2026-09-05 · `d61b2f0`
@@ -21,7 +40,7 @@
 - [x] `make eval` 一条命令产出 V0 全指标表
 - [x] 报表进版本库（`eval_reports/latest_v0-naive.md`）
 - [x] 能明确看到裸 LLM 错在哪里（`docs/eval/v0-baseline.md`）
-- [ ] PR 合入 `main`，tag `v0.1-phase0` —— 等用户
+- [x] PR #1 合入 `main`，tag `v0.1-phase0` —— 2026-09-05 · `08ae677`
 
 ---
 
@@ -62,8 +81,8 @@
 
 ## Phase 3 — 确定性策略引擎 + 决策层 · 分支 `phase3-policy-engine` · 负责 P3（可与 Phase 1 并行）
 
-- [~] M1 `PolicyFacts` + `evaluate()` 策略引擎（纯函数，FR-401/402）+ 契约 16 订单参数化 + 边界用例（FR-408）
-- [~] M2 `DecisionInput` + `decide()` §9.4 有序矩阵（FR-404/405/406）+ 优先级测试
+- [x] M1 `PolicyFacts` + `evaluate()` 策略引擎（`e2a5927`，待 master 审）（纯函数，FR-401/402）+ 契约 16 订单参数化 + 边界用例（FR-408）
+- [x] M2 `DecisionInput` + `decide()` §9.4（`e2a5927`，待 master 审） 有序矩阵（FR-404/405/406）+ 优先级测试
 - [ ] M3 master 审 `PolicyFacts` / `DecisionInput` 接口并定稿
 - [ ] M4 受约束话术骨架（拒绝 / 升级模板，LLM 只填变量，FR-407）
 - [ ] M5 接入图（`policy_gate` / `decide` 节点，事实从 biz 实时查，FR-403）→ `make eval AGENT=v3`
