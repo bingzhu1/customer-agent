@@ -1,8 +1,9 @@
 """τ_low / τ_high 标定（FR-309、PRD §11.1、ADR-0007）。
 
 ```
-uv run python scripts/calibrate_tau.py            # FakeEmbeddings，不触网，用于验证脚本本身
-uv run python scripts/calibrate_tau.py --real     # 真调 OpenAI，产出用于 ADR-0007 的分布表
+uv run python scripts/calibrate_tau.py                   # FakeEmbeddings，不触网，验证脚本
+uv run python scripts/calibrate_tau.py --real            # 真调 OpenAI，产出 ADR-0007 的分布表
+uv run python scripts/calibrate_tau.py --real --rewrite  # 再叠加 FR-302 查询改写
 ```
 
 做法照搬 PRD §11.1：
@@ -15,6 +16,11 @@ uv run python scripts/calibrate_tau.py --real     # 真调 OpenAI，产出用于
    - 陷阱样本 = 绑定了具体订单的资格判定题（RAG-009/010），走的是矩阵规则 10.5 而非检索分带，
      只列出来看，不参与分位计算
 4. τ_low 取负样本 95 分位，τ_high 取正样本 5 分位。
+
+`--rewrite` 会先用 `rag.rewrite.rewrite_query` 把用例里的口语问题改写成检索 query（FR-302），
+再拿改写后的 query 去检索。两次跑（带 / 不带 `--rewrite`）的分布放在一起看，
+才知道"分数重叠"是检索本身不行，还是查询没写对。
+golden 用例是单轮的，没有前序工具结果，因此 `CaseFacts` 传空——改写全靠句子本身。
 
 脚本**只输出建议值，不改 `settings.py`**——阈值是要写进 ADR 并由人拍板的。
 """
@@ -32,6 +38,7 @@ sys.path.insert(0, str(REPO_ROOT / "src"))
 
 from cs_agent.domain.enums import GoldenCategory, ReasonCode  # noqa: E402
 from cs_agent.eval.schema import GoldenCase, load_golden  # noqa: E402
+from cs_agent.memory.case_facts import CaseFacts  # noqa: E402
 from cs_agent.rag.embeddings import (  # noqa: E402
     EmbeddingProvider,
     FakeEmbeddings,
@@ -39,6 +46,7 @@ from cs_agent.rag.embeddings import (  # noqa: E402
 )
 from cs_agent.rag.ingest import ingest_policies  # noqa: E402
 from cs_agent.rag.retriever import PolicyRetriever, classify_band  # noqa: E402
+from cs_agent.rag.rewrite import RewrittenQuery, rewrite_query  # noqa: E402
 from cs_agent.settings import get_settings  # noqa: E402
 
 Label = Literal["positive", "low", "negative", "trap"]
@@ -59,6 +67,8 @@ class Row:
     case_id: str
     label: Label
     query: str
+    #: 实际送去检索的 query。不开 --rewrite 时与 `query` 相同。
+    search_query: str
     max_score: float
     top_policy_id: str
     band: str
@@ -91,7 +101,7 @@ def percentile(values: list[float], q: float) -> float:
     return ordered[low] + (ordered[high] - ordered[low]) * (pos - low)
 
 
-def collect(provider: EmbeddingProvider, top_k: int) -> list[Row]:
+def collect(provider: EmbeddingProvider, top_k: int, *, rewrite: bool = False) -> list[Row]:
     cases = [c for c in load_golden(GOLDEN_DIR).cases if c.category is GoldenCategory.RAG]
     settings = get_settings()
     # τ 给一对不影响检索的哨兵值：这一步只要分数，分带用当前配置另算
@@ -99,12 +109,18 @@ def collect(provider: EmbeddingProvider, top_k: int) -> list[Row]:
     rows: list[Row] = []
     for case in sorted(cases, key=lambda c: c.id):
         query = next((t.user for t in case.turns if t.user), "")
-        result = retriever.search(query)
+        search_query = query
+        if rewrite:
+            # golden 是单轮用例，没有前序工具结果，CaseFacts 只能是空的
+            rewritten: RewrittenQuery = rewrite_query(query, CaseFacts())
+            search_query = rewritten.query
+        result = retriever.search(search_query)
         rows.append(
             Row(
                 case_id=case.id,
                 label=label_of(case),
                 query=query,
+                search_query=search_query,
                 max_score=result.max_score,
                 top_policy_id=result.chunks[0].policy_id if result.chunks else "-",
                 band=classify_band(result.max_score, settings.rag_tau_low, settings.rag_tau_high),
@@ -113,21 +129,24 @@ def collect(provider: EmbeddingProvider, top_k: int) -> list[Row]:
     return rows
 
 
-def render(rows: list[Row], provider_name: str, top_k: int) -> str:
+def render(rows: list[Row], provider_name: str, top_k: int, *, rewrite: bool = False) -> str:
     settings = get_settings()
+    mode = "查询改写：开（FR-302）" if rewrite else "查询改写：关（原句直接检索）"
     out = [
         f"# τ 标定分布（provider={provider_name}, top_k={top_k}, 用例={len(rows)}）",
+        "",
+        mode,
         "",
         f"当前配置：τ_low={settings.rag_tau_low} τ_high={settings.rag_tau_high}"
         "（下表 `当前分带` 按此计算）",
         "",
-        "| 用例 | 样本类型 | max_score | top policy | 当前分带 | 查询 |",
+        "| 用例 | 样本类型 | max_score | top policy | 当前分带 | 送检索的 query |",
         "|---|---|---:|---|---|---|",
     ]
     for r in rows:
         out.append(
             f"| {r.case_id} | {LABEL_TEXT[r.label]} | {r.max_score:.4f} | "
-            f"{r.top_policy_id} | {r.band} | {r.query} |"
+            f"{r.top_policy_id} | {r.band} | {r.search_query} |"
         )
 
     groups: dict[Label, list[float]] = {}
@@ -182,6 +201,7 @@ def render(rows: list[Row], provider_name: str, top_k: int) -> str:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="用 golden 的 rag 用例标定 τ_low / τ_high")
     parser.add_argument("--real", action="store_true", help="真调 OpenAI（默认用 FakeEmbeddings）")
+    parser.add_argument("--rewrite", action="store_true", help="先跑 FR-302 查询改写再检索")
     parser.add_argument("--top-k", type=int, default=get_settings().rag_top_k)
     parser.add_argument("--out", type=Path, default=None, help="把 markdown 写到文件")
     parser.add_argument(
@@ -197,7 +217,9 @@ def main(argv: list[str] | None = None) -> int:
             f"[ingest] {ingest_policies(POLICY_DIR, provider=provider).render()}", file=sys.stderr
         )
 
-    report = render(collect(provider, args.top_k), name, args.top_k)
+    report = render(
+        collect(provider, args.top_k, rewrite=args.rewrite), name, args.top_k, rewrite=args.rewrite
+    )
     if args.out:
         args.out.write_text(report, encoding="utf-8")
         print(f"written: {args.out}", file=sys.stderr)
