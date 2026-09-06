@@ -4,3 +4,4 @@
 | 2026-09-05 | Phase 5 | 修长期记忆"嘴上否认"与语言偏好失效：RESPOND_SYSTEM 去掉写死中文、告知模型有记忆可自述；search 固定注入 language_preference（不再被 top_k 挤掉） | `288c2e1` | test_memory_* 42/42、graph/llm 36/36、lint 通过；API 实测：问记忆→复述 4 条；"用英文回答"→英文；催单问句 3 次均英文；"请用中文"压过记忆 |
 | 2026-09-05 | Phase 5 | 修软删记忆 key 永远学不回来：upsert 命中已删行且证据时间晚于 deleted_at 时复活 | `0b6c4dc` | test_memory_* 65/65、lint 通过；API 复现：清空→"以后用英文回答"→12 秒后同会话催单与新会话政策问答均为英文 |
 | 2026-09-06 | Phase 5 | 模板分支跟随回复语言：22 组英文骨架 + domain/language 确定性判定（本轮要求 → 记忆 → 中文），respond 按 state.reply_language 选模板与 prompt 语言 | `d6d5ee1` | 全量 915/915、lint、mypy 通过；API 实测英文偏好下缺单号 / 已退 / 超额转人工 / 他人订单均英文，"请用中文"压回中文 |
+| 2026-09-06 | 演示 | 演示资料套件：幻灯片 16 页与架构图解（在线 Artifact + 离线 html）、演示手册（开机清单 / 讲稿 / 五幕 / 兜底）、可演示功能全景、问答准备 40 题、速记卡、索引 README | 见本行 commit | 命令与 SQL 逐条对照源码核对；页面未截图 |
